@@ -1,5 +1,4 @@
 <resources>
-    <color name="bg">#FFF7F9FC</color>
-    <color name="brand">#FF1E6FD9</color>
-    <color name="brand_light">#FFD6E6FF</color>
+    <color name="ic_launcher_background">#DCEFD8</color>
+    <color name="splash_background">#F6FBF3</color>
 </resources>

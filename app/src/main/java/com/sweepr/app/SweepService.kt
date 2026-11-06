@@ -13,7 +13,6 @@ import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import kotlinx.coroutines.CancellationException
@@ -262,8 +261,15 @@ class SweepService : AccessibilityService() {
             text = "Starting sweep…"
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val stopBtn = Button(this).apply {
+        val stopBtn = TextView(this).apply {
             text = "Stop"
+            textSize = 15f
+            setTextColor(0xFF003919.toInt())
+            setPadding(dp(20), dp(10), dp(20), dp(10))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(24).toFloat()
+                setColor(0xFF93D69F.toInt())
+            }
             setOnClickListener { this@SweepService.stop() }
         }
         val card = LinearLayout(this).apply {
@@ -271,8 +277,9 @@ class SweepService : AccessibilityService() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(20), dp(12), dp(12), dp(12))
             background = GradientDrawable().apply {
-                cornerRadius = dp(24).toFloat()
-                setColor(0xF01E2A3A.toInt())
+                cornerRadius = dp(32).toFloat()
+                setColor(0xF0262B26.toInt())
+                setStroke(dp(1), 0x59414941)
             }
             addView(label)
             addView(stopBtn)
