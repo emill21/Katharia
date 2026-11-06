@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="sweep_now"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_sweep"
+        android:shortcutShortLabel="@string/shortcut_sweep"
+        android:shortcutLongLabel="@string/shortcut_sweep_long">
+        <intent
+            android:action="com.sweepr.app.SWEEP"
+            android:targetPackage="com.sweepr.app"
+            android:targetClass="com.sweepr.app.MainActivity" />
+    </shortcut>
+</shortcuts>

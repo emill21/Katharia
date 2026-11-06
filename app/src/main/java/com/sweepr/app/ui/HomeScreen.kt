@@ -8,14 +8,14 @@ import android.provider.Settings
 import android.text.format.Formatter
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -34,20 +34,26 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CleaningServices
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Sort
 import androidx.compose.material.icons.rounded.StopCircle
-import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -61,6 +67,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -76,6 +83,8 @@ import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -84,27 +93,28 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sweepr.app.AppOutcome
 import com.sweepr.app.AppRepo
 import com.sweepr.app.InstalledApp
+import com.sweepr.app.Lifetime
+import com.sweepr.app.Look
 import com.sweepr.app.Prefs
+import com.sweepr.app.SortBy
 import com.sweepr.app.StepResult
 import com.sweepr.app.Sweep
 import com.sweepr.app.SweepMode
@@ -113,6 +123,9 @@ import com.sweepr.app.SweepState
 import com.sweepr.app.Target
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.math.sqrt
+
+private const val FULL_ORB_BYTES = 3L * 1024 * 1024 * 1024 // 3 GB of cache fills the orb
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,10 +139,14 @@ fun HomeScreen() {
     var includeSystem by remember { mutableStateOf(prefs.includeSystem) }
     var excluded by remember { mutableStateOf(prefs.excluded) }
     var mode by remember { mutableStateOf(prefs.mode) }
+    var sort by remember { mutableStateOf(prefs.sort) }
     var query by remember { mutableStateOf("") }
     var apps by remember { mutableStateOf<List<InstalledApp>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
     var confirm by remember { mutableStateOf(false) }
+    var showLooks by remember { mutableStateOf(false) }
+    var lifetime by remember { mutableStateOf(prefs.lifetime) }
+    var burst by remember { mutableIntStateOf(0) }
 
     val state by Sweep.state.collectAsStateWithLifecycle()
 
@@ -142,19 +159,39 @@ fun HomeScreen() {
     LaunchedEffect(includeSystem, reload) {
         apps = withContext(Dispatchers.IO) { AppRepo.load(ctx, includeSystem) }
     }
+    // Celebrate when a sweep lands.
+    LaunchedEffect(state) {
+        val s = state
+        if (s is SweepState.Finished) {
+            lifetime = prefs.lifetime
+            reload++
+            if (!s.cancelled) {
+                burst++
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
+        }
+    }
 
     val all = apps.orEmpty()
     val selected = all.filter { it.packageName !in excluded }
-    val shown = if (query.isBlank()) all else all.filter {
+    val filtered = if (query.isBlank()) all else all.filter {
         it.label.contains(query, ignoreCase = true) || it.packageName.contains(query, ignoreCase = true)
+    }
+    val shown = when (sort) {
+        SortBy.Cache -> filtered.sortedWith(compareByDescending<InstalledApp> { it.cacheBytes ?: 0 }.thenBy { it.label.lowercase() })
+        SortBy.Name -> filtered.sortedBy { it.label.lowercase() }
+        SortBy.Selected -> filtered.sortedWith(
+            compareBy<InstalledApp> { it.packageName in excluded }.thenByDescending { it.cacheBytes ?: 0 }
+        )
     }
     val selectedCache = if (usageOn) selected.sumOf { it.cacheBytes ?: 0L } else null
     val running = state is SweepState.Running
     val colors = MaterialTheme.colorScheme
+    val look by Look.state.collectAsStateWithLifecycle()
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Box(Modifier.fillMaxSize().background(colors.surface)) {
-        AnimatedBackground("aurora", Modifier.fillMaxSize())
+        AnimatedBackground(look.background, Modifier.fillMaxSize())
         Scaffold(
             modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
             containerColor = Color.Transparent,
@@ -162,6 +199,9 @@ fun HomeScreen() {
             topBar = {
                 LargeTopAppBar(
                     title = { Text("Sweepr", style = MaterialTheme.typography.headlineLarge) },
+                    actions = {
+                        IconButton(onClick = { showLooks = true }) { Icon(Icons.Rounded.Palette, "Appearance") }
+                    },
                     scrollBehavior = scrollBehavior,
                     colors = TopAppBarDefaults.largeTopAppBarColors(
                         containerColor = Color.Transparent,
@@ -188,44 +228,43 @@ fun HomeScreen() {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 animatedItem(0) {
-                    AnimatedContent(
-                        targetState = state,
-                        contentKey = { it::class },
-                        transitionSpec = {
-                            (fadeIn(tween(260, delayMillis = 60)) + scaleIn(tween(260, delayMillis = 60), initialScale = 0.97f))
-                                .togetherWith(fadeOut(tween(90)))
+                    Hero(
+                        state = state,
+                        count = selected.size,
+                        total = all.size,
+                        cache = selectedCache,
+                        mode = mode,
+                        burst = burst,
+                        onMode = {
+                            if (it != mode) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            mode = it; prefs.mode = it
                         },
-                        label = "hero",
-                    ) { s ->
-                        when (s) {
-                            is SweepState.Running -> RunningHero(s)
-                            is SweepState.Finished -> ResultHero(s) { Sweep.dismiss() }
-                            SweepState.Idle -> ReadyHero(
-                                count = selected.size,
-                                total = all.size,
-                                cache = selectedCache,
-                                mode = mode,
-                                onMode = {
-                                    if (it != mode) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    mode = it; prefs.mode = it
-                                },
-                            )
-                        }
-                    }
+                        onDismiss = { Sweep.dismiss() },
+                    )
                 }
+                if (lifetime.sweeps > 0 && state !is SweepState.Running) animatedItem(1) { LifetimeStrip(lifetime) }
                 if (!serviceOn) animatedItem(1) { ServiceCard(ctx) }
                 if (!usageOn) animatedItem(2) { UsageCard(ctx) }
+                if (serviceOn && lifetime.sweeps == 0) animatedItem(2) { TileTip() }
 
                 animatedItem(3) { SectionHeader("Apps") }
-                animatedItem(3) {
-                    SearchField(query) { query = it }
-                }
+                animatedItem(3) { SearchField(query) { query = it } }
                 animatedItem(4) {
                     Row(
-                        Modifier.fillMaxWidth(),
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        FilterChip(
+                            selected = true,
+                            onClick = {
+                                sort = SortBy.entries[(sort.ordinal + 1) % SortBy.entries.size]; prefs.sort = sort
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
+                            label = { Text(sort.label) },
+                            leadingIcon = { Icon(Icons.Rounded.Sort, null, Modifier.size(18.dp)) },
+                            shape = CircleShape,
+                        )
                         FilterChip(
                             selected = includeSystem,
                             onClick = { includeSystem = !includeSystem; prefs.includeSystem = includeSystem },
@@ -233,7 +272,6 @@ fun HomeScreen() {
                             shape = CircleShape,
                             colors = FilterChipDefaults.filterChipColors(containerColor = colors.surfaceContainerLow),
                         )
-                        Spacer(Modifier.weight(1f))
                         TextButton(onClick = {
                             excluded = excluded - shown.map { it.packageName }.toSet(); prefs.excluded = excluded
                         }) { Text("Select all") }
@@ -244,7 +282,8 @@ fun HomeScreen() {
                 }
                 if (includeSystem) animatedItem(4) {
                     Text(
-                        "Force-stopping system apps can briefly drop things like your keyboard, launcher or Bluetooth until they restart.",
+                        "Force-stopping system apps can briefly drop things like Bluetooth until they restart. " +
+                            "Your keyboard, launcher, phone and SMS apps are always protected.",
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.error,
                         modifier = Modifier.padding(horizontal = 8.dp),
@@ -270,18 +309,20 @@ fun HomeScreen() {
                     }
                 }
                 itemsIndexed(shown, key = { _, a -> a.packageName }) { i, app ->
-                    Entrance(minOf(i + 5, 8)) {
-                        AppRow(
-                            app = app,
-                            checked = app.packageName !in excluded,
-                            first = i == 0,
-                            last = i == shown.lastIndex,
-                            onToggle = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                excluded = if (app.packageName in excluded) excluded - app.packageName else excluded + app.packageName
-                                prefs.excluded = excluded
-                            },
-                        )
+                    Box(Modifier.animateItem()) {
+                        Entrance(minOf(i + 5, 8)) {
+                            AppRow(
+                                app = app,
+                                checked = app.packageName !in excluded,
+                                first = i == 0,
+                                last = i == shown.lastIndex,
+                                onToggle = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    excluded = if (app.packageName in excluded) excluded - app.packageName else excluded + app.packageName
+                                    prefs.excluded = excluded
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -289,14 +330,16 @@ fun HomeScreen() {
     }
 
     if (confirm) {
+        val guarded = selected.count { it.protected }
         AlertDialog(
             onDismissRequest = { confirm = false },
             icon = { Icon(Icons.Rounded.AutoAwesome, null) },
             title = { Text("Sweep ${selected.size} apps?") },
             text = {
                 Text(
-                    "Your screen will flip through Settings for each app, about 2–4 seconds each. " +
-                        "Don't touch the phone until it's done. Tap Stop on the banner to cancel."
+                    "Your screen will flip through Settings for each app, about 1–3 seconds each. " +
+                        "Hands off until it's done; tap Stop on the banner to cancel." +
+                        if (guarded > 0 && mode.forceStop) "\n\n$guarded protected apps (keyboard, launcher…) get their cache cleared but won't be force-stopped." else ""
                 )
             },
             confirmButton = {
@@ -304,47 +347,109 @@ fun HomeScreen() {
                     confirm = false
                     val svc = SweepService.instance
                     if (svc == null) serviceOn = false
-                    else svc.start(selected.map { Target(it.packageName, it.label) }, mode)
+                    else svc.start(selected.map { Target(it.packageName, it.label, it.protected) }, mode)
                 }) { Text("Start") }
             },
             dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel") } },
         )
     }
+
+    if (showLooks) {
+        ModalBottomSheet(onDismissRequest = { showLooks = false }) {
+            AppearanceSheet(look = look, lifetime = lifetime) { Look.update(ctx, it) }
+        }
+    }
 }
 
-// ---------------------------------------------------------------- heroes
+// ---------------------------------------------------------------- hero
 
 @Composable
-private fun ReadyHero(count: Int, total: Int, cache: Long?, mode: SweepMode, onMode: (SweepMode) -> Unit) {
+private fun Hero(
+    state: SweepState,
+    count: Int,
+    total: Int,
+    cache: Long?,
+    mode: SweepMode,
+    burst: Int,
+    onMode: (SweepMode) -> Unit,
+    onDismiss: () -> Unit,
+) {
     val ctx = LocalContext.current
     val colors = MaterialTheme.colorScheme
-    GradientCard(top = colors.primaryContainer.copy(alpha = 0.8f), bottom = colors.surfaceContainerLow) {
-        Column(Modifier.padding(22.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconBadge(Icons.Rounded.CleaningServices, colors.primary, size = 56.dp)
-                Spacer(Modifier.width(16.dp))
-                Column {
-                    Text("Ready to sweep", style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
-                    BigNumber(count.toString(), if (count == 1) "app" else "apps")
+
+    fun levelFor(bytes: Long?): Float =
+        if (bytes != null) sqrt((bytes.toDouble() / FULL_ORB_BYTES).coerceIn(0.0, 1.0)).toFloat().coerceAtLeast(0.08f)
+        else if (total > 0) 0.15f + 0.7f * count / total else 0.3f
+
+    val level = when (state) {
+        SweepState.Idle -> levelFor(cache)
+        is SweepState.Running -> {
+            val start = levelFor(state.startCache ?: cache)
+            if (state.mode.clearCache) start * (1f - state.index.toFloat() / state.total.coerceAtLeast(1)) else start
+        }
+        is SweepState.Finished -> if (state.mode.clearCache && !state.cancelled) 0.04f else levelFor(cache)
+    }
+    val progress = (state as? SweepState.Running)?.let { (it.index + 1f) / it.total.coerceAtLeast(1) }
+    val top = if (state is SweepState.Finished) colors.tertiaryContainer else colors.primaryContainer
+
+    GradientCard(top = top.copy(alpha = 0.8f), bottom = colors.surfaceContainerLow) {
+        Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            if (state is SweepState.Finished) {
+                Box(Modifier.fillMaxWidth()) {
+                    IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.TopEnd)) {
+                        Icon(Icons.Rounded.Close, "Dismiss")
+                    }
                 }
             }
-            Spacer(Modifier.height(18.dp))
-            HeroStatStrip(
-                listOf(
-                    HeroStat(Icons.Rounded.Apps, "Selected", "$count of $total"),
-                    HeroStat(Icons.Rounded.Storage, "Cache", cache?.let { Formatter.formatShortFileSize(ctx, it) } ?: "—"),
-                    HeroStat(Icons.Rounded.AutoAwesome, "Action", mode.label),
-                ),
-                container = colors.surfaceContainerLowest.copy(alpha = 0.6f),
-            )
-            Spacer(Modifier.height(16.dp))
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                SweepMode.entries.forEachIndexed { i, m ->
-                    SegmentedButton(
-                        selected = m == mode,
-                        onClick = { onMode(m) },
-                        shape = SegmentedButtonDefaults.itemShape(index = i, count = SweepMode.entries.size),
-                    ) { Text(m.label, maxLines = 1) }
+            CacheOrb(
+                level = level,
+                progress = progress,
+                spinning = state is SweepState.Running,
+                burst = burst,
+                modifier = Modifier.size(240.dp),
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    when (state) {
+                        SweepState.Idle -> if (cache != null) {
+                            RollingText(Formatter.formatShortFileSize(ctx, cache), style = MaterialTheme.typography.headlineLarge)
+                            OrbLabel("cache to clear")
+                        } else {
+                            RollingText("$count", style = MaterialTheme.typography.displaySmall)
+                            OrbLabel(if (count == 1) "app selected" else "apps selected")
+                        }
+                        is SweepState.Running -> {
+                            RollingText("${state.index + 1}/${state.total}", style = MaterialTheme.typography.headlineLarge)
+                            OrbLabel("sweeping")
+                        }
+                        is SweepState.Finished -> {
+                            val freed = state.freedBytes
+                            if (freed != null && freed > 0) {
+                                CountUpBytes(freed)
+                                OrbLabel("freed")
+                            } else {
+                                RollingText("${state.outcomes.size}", style = MaterialTheme.typography.displaySmall)
+                                OrbLabel("apps swept")
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            AnimatedContent(
+                targetState = state,
+                contentKey = { it::class },
+                transitionSpec = {
+                    (fadeIn(tween(260, delayMillis = 60)) + scaleIn(tween(260, delayMillis = 60), initialScale = 0.97f))
+                        .togetherWith(fadeOut(tween(90)))
+                },
+                label = "heroBody",
+            ) { s ->
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    when (s) {
+                        SweepState.Idle -> ReadyBody(count, total, cache, mode, onMode)
+                        is SweepState.Running -> RunningBody(s)
+                        is SweepState.Finished -> ResultBody(s)
+                    }
                 }
             }
         }
@@ -352,87 +457,208 @@ private fun ReadyHero(count: Int, total: Int, cache: Long?, mode: SweepMode, onM
 }
 
 @Composable
-private fun RunningHero(s: SweepState.Running) {
+private fun OrbLabel(text: String) {
+    Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+/** Odometer-style count up from 0 to [bytes]. */
+@Composable
+private fun CountUpBytes(bytes: Long) {
+    val ctx = LocalContext.current
+    val anim = remember(bytes) { Animatable(0f) }
+    LaunchedEffect(bytes) { anim.animateTo(1f, tween(1400, easing = FastOutSlowInEasing)) }
+    RollingText(
+        Formatter.formatShortFileSize(ctx, (bytes * anim.value).toLong()),
+        style = MaterialTheme.typography.headlineLarge,
+    )
+}
+
+@Composable
+private fun ReadyBody(count: Int, total: Int, cache: Long?, mode: SweepMode, onMode: (SweepMode) -> Unit) {
+    val ctx = LocalContext.current
     val colors = MaterialTheme.colorScheme
-    val progress by animateFloatAsState((s.index + 1f) / s.total.coerceAtLeast(1), tween(500), label = "sweep")
-    GradientCard(top = colors.primaryContainer.copy(alpha = 0.8f), bottom = colors.surfaceContainerLow) {
-        Row(Modifier.padding(22.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(120.dp), contentAlignment = Alignment.Center) {
-                val track = colors.primary.copy(alpha = 0.14f)
-                val arc = colors.primary
-                Canvas(Modifier.fillMaxSize()) {
-                    val stroke = 14.dp.toPx()
-                    val tl = Offset(stroke / 2, stroke / 2)
-                    val sz = Size(size.width - stroke, size.height - stroke)
-                    drawArc(track, 0f, 360f, false, tl, sz, style = Stroke(stroke))
-                    drawArc(arc, -90f, 360f * progress, false, tl, sz, style = Stroke(stroke, cap = StrokeCap.Round))
-                }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    RollingText("${s.index + 1}", style = MaterialTheme.typography.headlineMedium)
-                    Text("of ${s.total}", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
-                }
-            }
-            Spacer(Modifier.width(20.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Sweeping", style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
-                Text(s.current, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    HeroStatStrip(
+        listOf(
+            HeroStat(Icons.Rounded.Apps, "Selected", "$count of $total"),
+            HeroStat(Icons.Rounded.Storage, "Cache", cache?.let { Formatter.formatShortFileSize(ctx, it) } ?: "—"),
+            HeroStat(Icons.Rounded.AutoAwesome, "Action", mode.label),
+        ),
+        container = colors.surfaceContainerLowest.copy(alpha = 0.6f),
+    )
+    Spacer(Modifier.height(16.dp))
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        SweepMode.entries.forEachIndexed { i, m ->
+            SegmentedButton(
+                selected = m == mode,
+                onClick = { onMode(m) },
+                shape = SegmentedButtonDefaults.itemShape(index = i, count = SweepMode.entries.size),
+            ) { Text(m.label, maxLines = 1) }
+        }
+    }
+}
+
+@Composable
+private fun RunningBody(s: SweepState.Running) {
+    val colors = MaterialTheme.colorScheme
+    Text("Now sweeping", style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
+    Text(
+        s.current,
+        style = MaterialTheme.typography.headlineSmall,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = TextAlign.Center,
+    )
+    Spacer(Modifier.height(12.dp))
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = colors.surfaceContainerLowest.copy(alpha = 0.6f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(vertical = 8.dp)) {
+            if (s.log.isEmpty()) {
                 Text(
-                    when (s.mode) {
-                        SweepMode.Both -> "Force stop + clear cache"
-                        SweepMode.CacheOnly -> "Clearing cache"
-                        SweepMode.StopOnly -> "Force stopping"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
+                    "Results appear here as each app is done.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
+            s.log.forEachIndexed { i, o ->
+                key(o.target.packageName) { Entrance(i) { TickerRow(o) } }
+            }
         }
     }
 }
 
 @Composable
-private fun ResultHero(s: SweepState.Finished, onDismiss: () -> Unit) {
+private fun TickerRow(o: AppOutcome) {
+    val colors = MaterialTheme.colorScheme
+    val did = o.stop == StepResult.Done || o.cache == StepResult.Done
+    val failed = o.stop == StepResult.NotFound || o.cache == StepResult.NotFound
+    val (icon, tint) = when {
+        failed -> Icons.Rounded.ErrorOutline to colors.error
+        did -> Icons.Rounded.CheckCircle to colors.primary
+        else -> Icons.Rounded.RemoveCircleOutline to colors.onSurfaceVariant
+    }
+    val what = listOfNotNull(
+        "Stopped".takeIf { o.stop == StepResult.Done },
+        "Cache cleared".takeIf { o.cache == StepResult.Done },
+        "Protected".takeIf { o.target.protect && o.stop == StepResult.Skipped && !did },
+    ).joinToString(" · ").ifEmpty { if (failed) "Couldn't finish" else "Already clean" }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(o.target.label, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(8.dp))
+        Text(what, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant, maxLines = 1)
+    }
+}
+
+@Composable
+private fun ResultBody(s: SweepState.Finished) {
     val ctx = LocalContext.current
     val colors = MaterialTheme.colorScheme
     val skipped = s.outcomes.count { it.stop != StepResult.Done && it.cache != StepResult.Done && it !in s.problems }
-    GradientCard(top = colors.tertiaryContainer.copy(alpha = 0.8f), bottom = colors.surfaceContainerLow) {
-        Column(Modifier.padding(22.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconBadge(if (s.cancelled) Icons.Rounded.StopCircle else Icons.Rounded.CheckCircle, colors.tertiary, size = 56.dp)
-                Spacer(Modifier.width(16.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(if (s.cancelled) "Sweep stopped" else "All clean", style = MaterialTheme.typography.headlineSmall)
-                    Text(
-                        "${s.outcomes.size} apps checked" + if (skipped > 0) " · $skipped already clean" else "",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = colors.onSurfaceVariant,
-                    )
-                }
-                IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, "Dismiss") }
-            }
-            Spacer(Modifier.height(18.dp))
-            HeroStatStrip(
-                buildList {
-                    if (s.mode.forceStop) add(HeroStat(Icons.Rounded.StopCircle, "Stopped", "${s.stopped}"))
-                    if (s.mode.clearCache) add(HeroStat(Icons.Rounded.CleaningServices, "Cache cleared", "${s.cleared}"))
-                    if (s.mode.clearCache) add(
-                        HeroStat(Icons.Rounded.Storage, "Freed", s.freedBytes?.let { Formatter.formatShortFileSize(ctx, it) } ?: "—")
-                    )
-                },
-                container = colors.surfaceContainerLowest.copy(alpha = 0.6f),
+    Text(
+        if (s.cancelled) "Sweep stopped" else "All clean ✨",
+        style = MaterialTheme.typography.headlineSmall,
+    )
+    Text(
+        "${s.outcomes.size} apps checked" + if (skipped > 0) " · $skipped already clean" else "",
+        style = MaterialTheme.typography.bodyMedium,
+        color = colors.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(14.dp))
+    HeroStatStrip(
+        buildList {
+            if (s.mode.forceStop) add(HeroStat(Icons.Rounded.StopCircle, "Stopped", "${s.stopped}"))
+            if (s.mode.clearCache) add(HeroStat(Icons.Rounded.CleaningServices, "Cleared", "${s.cleared}"))
+            if (s.mode.clearCache) add(
+                HeroStat(Icons.Rounded.Storage, "Freed", s.freedBytes?.let { Formatter.formatShortFileSize(ctx, it) } ?: "—")
             )
-            if (s.problems.isNotEmpty()) {
-                Spacer(Modifier.height(14.dp))
-                Row(verticalAlignment = Alignment.Top) {
-                    Icon(Icons.Rounded.ErrorOutline, null, tint = colors.error, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "Couldn't finish ${s.problems.size}: " + s.problems.take(5).joinToString { it.target.label } +
-                            if (s.problems.size > 5) "…" else "",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant,
-                    )
-                }
+        },
+        container = colors.surfaceContainerLowest.copy(alpha = 0.6f),
+    )
+    if (s.problems.isNotEmpty()) {
+        Spacer(Modifier.height(14.dp))
+        Row(verticalAlignment = Alignment.Top) {
+            Icon(Icons.Rounded.ErrorOutline, null, tint = colors.error, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "Couldn't finish ${s.problems.size}: " + s.problems.take(5).joinToString { it.target.label } +
+                    if (s.problems.size > 5) "…" else "",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LifetimeStrip(l: Lifetime) {
+    val ctx = LocalContext.current
+    val colors = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Pill("${l.sweeps} ${if (l.sweeps == 1) "sweep" else "sweeps"}", Icons.Rounded.AutoAwesome, colors.primaryContainer, colors.onPrimaryContainer)
+        if (l.freedBytes > 0) Pill(
+            "${Formatter.formatShortFileSize(ctx, l.freedBytes)} freed all-time", Icons.Rounded.Storage,
+            colors.tertiaryContainer, colors.onTertiaryContainer,
+        )
+        if (l.stopped > 0) Pill("${l.stopped} stops", Icons.Rounded.StopCircle, colors.secondaryContainer, colors.onSecondaryContainer)
+    }
+}
+
+@Composable
+private fun TileTip() {
+    val colors = MaterialTheme.colorScheme
+    SectionCard(container = colors.surfaceContainerLow) {
+        Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconBadge(Icons.Rounded.TouchApp, colors.primary, size = 40.dp)
+            Spacer(Modifier.width(14.dp))
+            Text(
+                "Tip: add the Sweep tile to Quick Settings, or long-press the Sweepr icon → Sweep now, to sweep without opening the app.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------- appearance
+
+@Composable
+private fun AppearanceSheet(look: com.sweepr.app.Appearance, lifetime: Lifetime, onChange: (com.sweepr.app.Appearance) -> Unit) {
+    val ctx = LocalContext.current
+    Column(Modifier.padding(bottom = 32.dp)) {
+        Text(
+            "Appearance",
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+        )
+        SectionHeader("Theme", Modifier.padding(start = 16.dp))
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            val modes = listOf("system" to "System", "light" to "Light", "dark" to "Dark")
+            modes.forEachIndexed { i, (k, label) ->
+                SegmentedButton(
+                    selected = look.themeMode == k,
+                    onClick = { onChange(look.copy(themeMode = k)) },
+                    shape = SegmentedButtonDefaults.itemShape(index = i, count = modes.size),
+                ) { Text(label) }
             }
+        }
+        SectionHeader("Accent", Modifier.padding(start = 16.dp, bottom = 8.dp))
+        AccentPicker(selected = look.accent) { onChange(look.copy(accent = it)) }
+        SectionHeader("Background", Modifier.padding(start = 16.dp, bottom = 8.dp))
+        BackgroundPicker(selected = look.background) { onChange(look.copy(background = it)) }
+        if (lifetime.sweeps > 0) {
+            SectionHeader("All-time", Modifier.padding(start = 16.dp))
+            InfoRow("Sweeps", "${lifetime.sweeps}", icon = Icons.Rounded.AutoAwesome)
+            InfoRow("Space freed", Formatter.formatShortFileSize(ctx, lifetime.freedBytes), icon = Icons.Rounded.Storage)
+            InfoRow("Apps force-stopped", "${lifetime.stopped}", icon = Icons.Rounded.StopCircle)
+            InfoRow("Caches cleared", "${lifetime.cleared}", icon = Icons.Rounded.CleaningServices)
         }
     }
 }
@@ -556,8 +782,16 @@ private fun AppRow(app: InstalledApp, checked: Boolean, first: Boolean, last: Bo
                 app.cacheBytes?.let { append(Formatter.formatShortFileSize(ctx, it)).append(" cache") }
                 if (app.system) { if (isNotEmpty()) append(" · "); append("System") }
             }
-            if (sub.isNotEmpty()) {
-                Text(sub, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            if (sub.isNotEmpty() || app.protected) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (app.protected) {
+                        Icon(Icons.Rounded.Shield, null, tint = colors.primary, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Protected", style = MaterialTheme.typography.labelMedium, color = colors.primary)
+                        if (sub.isNotEmpty()) Text(" · ", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                    }
+                    if (sub.isNotEmpty()) Text(sub, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                }
             }
         }
         Checkbox(checked = checked, onCheckedChange = { onToggle() })

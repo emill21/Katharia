@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
@@ -16,6 +17,9 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.LinearLayout
 import android.widget.TextView
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -59,32 +63,61 @@ class SweepService : AccessibilityService() {
 
     // ---------------------------------------------------------------- sweep loop
 
-    fun start(targets: List<Target>, mode: SweepMode) {
+    fun start(targets: List<Target>, mode: SweepMode, fromShade: Boolean = false) {
         if (job?.isActive == true || targets.isEmpty()) return
         text = SettingsText(this) // pick up a language change
         val list = targets.filter { it.packageName != packageName && it.packageName != SettingsText.SETTINGS }
         job = scope.launch {
             val outcomes = mutableListOf<AppOutcome>()
-            val before = if (mode.clearCache) AppRepo.totalCache(this@SweepService, list) else null
+            var before: Long? = null
             var cancelled = false
-            showOverlay()
             try {
+                if (fromShade) {
+                    // Started from the Quick Settings tile: get the shade out of the way first.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
+                    } else {
+                        performGlobalAction(GLOBAL_ACTION_BACK)
+                    }
+                    delay(350)
+                }
+                Sweep.set(SweepState.Running(mode, 0, list.size, list.firstOrNull()?.label ?: ""))
+                before = if (mode.clearCache) withContext(Dispatchers.IO) { AppRepo.totalCache(this@SweepService, list) } else null
+                showOverlay()
                 list.forEachIndexed { i, t ->
-                    Sweep.set(SweepState.Running(mode, i, list.size, t.label))
+                    Sweep.set(SweepState.Running(mode, i, list.size, t.label, outcomes.takeLast(4).reversed(), before))
                     overlayText?.text = "Sweeping ${i + 1} of ${list.size}\n${t.label}"
                     outcomes += sweepOne(t, mode)
                 }
             } catch (e: CancellationException) {
                 cancelled = true
             } finally {
-                hideOverlay()
-                val after = if (before != null) AppRepo.totalCache(this@SweepService, list) else null
-                val freed = if (before != null && after != null) (before - after).coerceAtLeast(0) else null
-                Sweep.set(SweepState.Finished(mode, outcomes.toList(), cancelled, freed))
-                backToApp()
+                withContext(NonCancellable) {
+                    hideOverlay()
+                    val after = if (before != null) withContext(Dispatchers.IO) { AppRepo.totalCache(this@SweepService, list) } else null
+                    val freed = if (before != null && after != null) (before - after).coerceAtLeast(0) else null
+                    val done = SweepState.Finished(mode, outcomes.toList(), cancelled, freed)
+                    Prefs(this@SweepService).record(done)
+                    Sweep.set(done)
+                    backToApp()
+                }
             }
         }
     }
+
+    /** Sweeps the selection saved in the app (tile and shortcut use this). */
+    fun startSaved(fromShade: Boolean) {
+        if (job?.isActive == true) return
+        scope.launch {
+            val prefs = Prefs(this@SweepService)
+            val apps = withContext(Dispatchers.IO) { AppRepo.load(this@SweepService, prefs.includeSystem) }
+            val targets = apps.filter { it.packageName !in prefs.excluded }
+                .map { Target(it.packageName, it.label, it.protected) }
+            start(targets, prefs.mode, fromShade)
+        }
+    }
+
+    val isRunning get() = job?.isActive == true
 
     fun stop() {
         job?.cancel()
@@ -97,7 +130,7 @@ class SweepService : AccessibilityService() {
         val ready = poll(4000) { findTappable(text.forceStop) ?: findTappable(text.storage) }
         if (ready == null) return AppOutcome(t, notFoundIf(mode.forceStop), notFoundIf(mode.clearCache))
 
-        val stop = if (mode.forceStop) tapForceStop() else StepResult.Skipped
+        val stop = if (mode.forceStop && !t.protect) tapForceStop() else StepResult.Skipped
         val cache = if (mode.clearCache) tapClearCache() else StepResult.Skipped
         return AppOutcome(t, stop, cache)
     }
@@ -112,7 +145,7 @@ class SweepService : AccessibilityService() {
         val ok = poll(2500) { findConfirm(exclude = btn) }
         if (ok != null) {
             ok.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            delay(450)
+            delay(250)
             return StepResult.Done
         }
         // Some skins stop the app straight away with no dialog; the button greys out.
@@ -133,7 +166,7 @@ class SweepService : AccessibilityService() {
                 ?: return StepResult.AlreadyClean
         }
         clear.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        delay(500)
+        delay(300)
         return StepResult.Done
     }
 
@@ -243,7 +276,7 @@ class SweepService : AccessibilityService() {
         while (true) {
             runCatching(block).getOrNull()?.let { return it }
             if (System.currentTimeMillis() > end) return null
-            delay(150)
+            delay(100)
         }
     }
 

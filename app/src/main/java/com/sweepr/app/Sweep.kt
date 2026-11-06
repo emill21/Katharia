@@ -11,7 +11,8 @@ enum class SweepMode(val forceStop: Boolean, val clearCache: Boolean, val label:
     StopOnly(true, false, "Force stop"),
 }
 
-data class Target(val packageName: String, val label: String)
+/** [protect] = never force-stop (keyboard, launcher, phone…); its cache can still be cleared. */
+data class Target(val packageName: String, val label: String, val protect: Boolean = false)
 
 /** Outcome of one step on one app. */
 enum class StepResult { Done, AlreadyClean, NotFound, Skipped }
@@ -30,6 +31,10 @@ sealed interface SweepState {
         val index: Int,
         val total: Int,
         val current: String,
+        /** Most recent finished apps, newest first, for the live ticker. */
+        val log: List<AppOutcome> = emptyList(),
+        /** Cache total measured before the sweep started, if usage access is on. */
+        val startCache: Long? = null,
     ) : SweepState
 
     data class Finished(
