@@ -1,4 +1,4 @@
-package com.sweepr.app.ui
+package com.katharia.app.ui
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing

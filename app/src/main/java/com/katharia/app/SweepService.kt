@@ -1,4 +1,4 @@
-package com.sweepr.app
+package com.katharia.app
 
 import android.accessibilityservice.AccessibilityService
 import android.annotation.SuppressLint
@@ -245,7 +245,7 @@ class SweepService : AccessibilityService() {
         val i = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", pkg, null))
             .addFlags(
                 // CLEAR_TOP swaps the App info page in place inside Settings' own task. (CLEAR_TASK tore the
-                // whole task down each time, flashing Sweepr's screen underneath between apps.)
+                // whole task down each time, flashing Katharia's screen underneath between apps.)
                 Intent.FLAG_ACTIVITY_NEW_TASK or
                     (if (clearTask) Intent.FLAG_ACTIVITY_CLEAR_TASK else Intent.FLAG_ACTIVITY_CLEAR_TOP) or
                     Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS

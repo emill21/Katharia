@@ -1,4 +1,4 @@
-package com.sweepr.app
+package com.katharia.app
 
 import android.content.Context
 

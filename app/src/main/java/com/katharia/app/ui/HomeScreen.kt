@@ -1,4 +1,4 @@
-package com.sweepr.app.ui
+package com.katharia.app.ui
 
 import android.content.Context
 import android.content.Intent
@@ -112,19 +112,19 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.sweepr.app.AppOutcome
-import com.sweepr.app.AppRepo
-import com.sweepr.app.InstalledApp
-import com.sweepr.app.Lifetime
-import com.sweepr.app.Look
-import com.sweepr.app.Prefs
-import com.sweepr.app.SortBy
-import com.sweepr.app.StepResult
-import com.sweepr.app.Sweep
-import com.sweepr.app.SweepMode
-import com.sweepr.app.SweepService
-import com.sweepr.app.SweepState
-import com.sweepr.app.Target
+import com.katharia.app.AppOutcome
+import com.katharia.app.AppRepo
+import com.katharia.app.InstalledApp
+import com.katharia.app.Lifetime
+import com.katharia.app.Look
+import com.katharia.app.Prefs
+import com.katharia.app.SortBy
+import com.katharia.app.StepResult
+import com.katharia.app.Sweep
+import com.katharia.app.SweepMode
+import com.katharia.app.SweepService
+import com.katharia.app.SweepState
+import com.katharia.app.Target
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.sqrt
@@ -133,7 +133,7 @@ private const val FULL_ORB_BYTES = 3L * 1024 * 1024 * 1024 // 3 GB of cache fill
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen() {
+fun HomeScreen(onReplayTour: () -> Unit = {}) {
     val ctx = LocalContext.current
     val prefs = remember { Prefs(ctx) }
     val haptics = LocalHapticFeedback.current
@@ -155,6 +155,7 @@ fun HomeScreen() {
     val state by Sweep.state.collectAsStateWithLifecycle()
 
     LifecycleResumeEffect(Unit) {
+        com.katharia.app.AccessKeeper.ensureEnabled(ctx)
         serviceOn = AppRepo.isServiceEnabled(ctx)
         usageOn = AppRepo.hasUsageAccess(ctx)
         reload++
@@ -202,7 +203,7 @@ fun HomeScreen() {
             contentColor = colors.onSurface,
             topBar = {
                 LargeTopAppBar(
-                    title = { Text("Sweepr", style = MaterialTheme.typography.headlineLarge) },
+                    title = { Text("Katharia", style = MaterialTheme.typography.headlineLarge) },
                     actions = {
                         IconButton(onClick = { showLooks = true }) { Icon(Icons.Rounded.Palette, "Appearance") }
                     },
@@ -361,7 +362,11 @@ fun HomeScreen() {
 
     if (showLooks) {
         ModalBottomSheet(onDismissRequest = { showLooks = false }) {
-            AppearanceSheet(look = look, lifetime = lifetime) { Look.update(ctx, it) }
+            AppearanceSheet(
+                look = look,
+                lifetime = lifetime,
+                onReplayTour = { showLooks = false; onReplayTour() },
+            ) { Look.update(ctx, it) }
         }
     }
 }
@@ -616,7 +621,7 @@ private fun SweepLogSheet(s: SweepState.Finished, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val text = remember(s) {
         buildString {
-            appendLine("Sweepr log · ${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}")
+            appendLine("Katharia log · ${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}")
             appendLine("Mode ${s.mode.label} · ${s.outcomes.size} apps · ${formatElapsed(s.elapsedMs)}")
             s.outcomes.forEach { o ->
                 appendLine("${o.target.label}: ${o.ms}ms · stop=${o.stop} cache=${o.cache} · ${o.note}")
@@ -692,7 +697,7 @@ private fun TileTip() {
             IconBadge(Icons.Rounded.TouchApp, colors.primary, size = 40.dp)
             Spacer(Modifier.width(14.dp))
             Text(
-                "Tip: add the Sweep tile to Quick Settings, or long-press the Sweepr icon → Sweep now, to sweep without opening the app.",
+                "Tip: add the Sweep tile to Quick Settings, or long-press the Katharia icon → Sweep now, to sweep without opening the app.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.onSurfaceVariant,
             )
@@ -703,7 +708,12 @@ private fun TileTip() {
 // ---------------------------------------------------------------- appearance
 
 @Composable
-private fun AppearanceSheet(look: com.sweepr.app.Appearance, lifetime: Lifetime, onChange: (com.sweepr.app.Appearance) -> Unit) {
+private fun AppearanceSheet(
+    look: com.katharia.app.Appearance,
+    lifetime: Lifetime,
+    onReplayTour: () -> Unit,
+    onChange: (com.katharia.app.Appearance) -> Unit,
+) {
     val ctx = LocalContext.current
     Column(Modifier.padding(bottom = 32.dp)) {
         Text(
@@ -732,6 +742,15 @@ private fun AppearanceSheet(look: com.sweepr.app.Appearance, lifetime: Lifetime,
             InfoRow("Space freed", Formatter.formatShortFileSize(ctx, lifetime.freedBytes), icon = Icons.Rounded.Storage)
             InfoRow("Apps force-stopped", "${lifetime.stopped}", icon = Icons.Rounded.StopCircle)
             InfoRow("Caches cleared", "${lifetime.cleared}", icon = Icons.Rounded.CleaningServices)
+        }
+        SectionHeader("Access", Modifier.padding(start = 16.dp))
+        Box(Modifier.padding(horizontal = 16.dp)) {
+            NeverAskCard(com.katharia.app.AccessKeeper.canSelfEnable(ctx))
+        }
+        TextButton(onClick = onReplayTour, modifier = Modifier.padding(start = 12.dp, top = 8.dp)) {
+            Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Replay welcome tour")
         }
     }
 }
@@ -770,9 +789,9 @@ private fun ServiceCard(ctx: Context) {
     val restricted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     SetupCard(
         Icons.Rounded.Shield,
-        "Turn on Sweepr",
+        "Turn on Katharia",
         "Android only lets apps force-stop and clear cache for other apps by tapping the buttons in Settings. " +
-            "Switch on Sweepr under Accessibility → Installed apps so it can do that for you." +
+            "Switch on Katharia under Accessibility → Installed apps so it can do that for you." +
             if (restricted) "\n\nSwitch greyed out? Tap App info → ⋮ menu → Allow restricted settings, then try again." else "",
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

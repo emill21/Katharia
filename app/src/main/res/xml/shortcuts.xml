@@ -7,8 +7,8 @@
         android:shortcutShortLabel="@string/shortcut_sweep"
         android:shortcutLongLabel="@string/shortcut_sweep_long">
         <intent
-            android:action="com.sweepr.app.SWEEP"
-            android:targetPackage="com.sweepr.app"
-            android:targetClass="com.sweepr.app.MainActivity" />
+            android:action="com.katharia.app.SWEEP"
+            android:targetPackage="com.katharia.app"
+            android:targetClass="com.katharia.app.MainActivity" />
     </shortcut>
 </shortcuts>

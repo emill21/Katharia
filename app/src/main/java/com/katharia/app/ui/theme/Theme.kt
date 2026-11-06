@@ -1,4 +1,4 @@
-package com.sweepr.app.ui.theme
+package com.katharia.app.ui.theme
 
 import android.content.Context
 import android.os.Build
@@ -215,7 +215,7 @@ private fun ColorScheme.frosted(dark: Boolean): ColorScheme {
 
 /** Same look as Bataria: wallpaper colours (or emerald), bold type, round shapes, frosted cards over the aurora. */
 @Composable
-fun SweeprTheme(
+fun KathariaTheme(
     dark: Boolean,
     accent: Int = 0,
     background: String = "aurora",

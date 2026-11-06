@@ -1,4 +1,4 @@
-package com.sweepr.app
+package com.katharia.app
 
 import android.app.AppOpsManager
 import android.app.usage.StorageStatsManager

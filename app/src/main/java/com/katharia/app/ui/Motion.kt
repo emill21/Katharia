@@ -1,4 +1,4 @@
-package com.sweepr.app.ui
+package com.katharia.app.ui
 
 import android.hardware.Sensor
 import android.hardware.SensorEvent

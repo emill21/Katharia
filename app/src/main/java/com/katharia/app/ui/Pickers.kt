@@ -1,4 +1,4 @@
-package com.sweepr.app.ui
+package com.katharia.app.ui
 
 import android.os.Build
 import androidx.compose.animation.animateColorAsState
@@ -37,9 +37,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.sweepr.app.ui.theme.AccentPresets
-import com.sweepr.app.ui.theme.DEFAULT_SEED
-import com.sweepr.app.ui.theme.baseScheme
+import com.katharia.app.ui.theme.AccentPresets
+import com.katharia.app.ui.theme.DEFAULT_SEED
+import com.katharia.app.ui.theme.baseScheme
 
 // Accent and background pickers, shared with Bataria.
 

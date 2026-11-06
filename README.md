@@ -1,17 +1,15 @@
-# Sweepr
+# Katharia
 
-Clear the cache of every app and force-stop them all, in one tap.
+*καθαριά: Greek for "clean".* Clear the cache of every app and force-stop them all, in one tap.
 
-Android doesn't allow normal apps to do either of these to other apps, so Sweepr uses an
+Android doesn't allow normal apps to do either of these to other apps, so Katharia uses an
 Accessibility service: it opens each selected app's page in Settings and taps **Force stop**
-and **Storage → Clear cache** for you, with a progress banner and a Stop button.
-It never taps *Clear storage / Clear data*, and does nothing unless you start a sweep.
+and **Storage → Clear cache** for you. It never taps *Clear storage / Clear data*.
 
 ## Install
-Grab `Sweepr.apk` from the latest [release](../../releases), open it, then:
-1. Android 13+: App info → ⋮ → **Allow restricted settings** (needed for sideloaded apps).
-2. Settings → Accessibility → Installed apps → **Sweepr** → On.
-3. Optional: allow **Usage access** to see cache sizes and how much was freed.
+Grab `Katharia.apk` from the latest [release](../../releases). The welcome tour walks you through
+turning it on. Every build is signed with the same key (`keystore/`), so updates install over the
+previous version and keep your permissions.
 
-## Build
-Every push builds a signed (debug-key) APK with GitHub Actions; pushes to `main` publish a release.
+Optional, once: `adb shell pm grant com.katharia.app android.permission.WRITE_SECURE_SETTINGS`
+lets Katharia switch its own Accessibility service back on if Android ever turns it off.

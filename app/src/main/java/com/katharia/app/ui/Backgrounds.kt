@@ -1,4 +1,4 @@
-package com.sweepr.app.ui
+package com.katharia.app.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.material3.MaterialTheme

@@ -1,4 +1,4 @@
-package com.sweepr.app
+package com.katharia.app
 
 import android.content.Intent
 import android.graphics.Color
@@ -12,14 +12,25 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.sweepr.app.ui.HomeScreen
-import com.sweepr.app.ui.theme.SweeprTheme
+import com.katharia.app.ui.HomeScreen
+import com.katharia.app.ui.OnboardingScreen
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.katharia.app.ui.theme.KathariaTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         Look.init(this)
+        AccessKeeper.ensureEnabled(this)
+        val prefs = Prefs(this)
         setContent {
             val look by Look.state.collectAsStateWithLifecycle()
             val dark = look.isDark(isSystemInDarkTheme())
@@ -29,7 +40,13 @@ class MainActivity : ComponentActivity() {
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
                 onDispose { }
             }
-            SweeprTheme(dark, look.accent, look.background) { HomeScreen() }
+            var onboarded by remember { mutableStateOf(prefs.onboarded) }
+            KathariaTheme(dark, look.accent, look.background) {
+                AnimatedContent(onboarded, transitionSpec = { fadeIn(tween(400)) togetherWith fadeOut(tween(250)) }, label = "root") { done ->
+                    if (done) HomeScreen(onReplayTour = { onboarded = false })
+                    else OnboardingScreen(look) { prefs.onboarded = true; onboarded = true }
+                }
+            }
         }
         if (savedInstanceState == null) handleShortcut(intent)
     }

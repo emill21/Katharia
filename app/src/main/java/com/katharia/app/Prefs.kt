@@ -1,4 +1,4 @@
-package com.sweepr.app
+package com.katharia.app
 
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,7 +23,7 @@ data class Lifetime(val sweeps: Int, val freedBytes: Long, val stopped: Int, val
 
 /** Small saved settings: selection, mode, sort, looks and all-time stats. */
 class Prefs(context: Context) {
-    private val sp = context.applicationContext.getSharedPreferences("sweepr", Context.MODE_PRIVATE)
+    private val sp = context.applicationContext.getSharedPreferences("katharia", Context.MODE_PRIVATE)
 
     var excluded: Set<String>
         get() = sp.getStringSet("excluded", emptySet())!!.toSet()
@@ -36,6 +36,10 @@ class Prefs(context: Context) {
     var sort: SortBy
         get() = runCatching { SortBy.valueOf(sp.getString("sort", null)!!) }.getOrDefault(SortBy.Cache)
         set(v) = sp.edit().putString("sort", v.name).apply()
+
+    var onboarded: Boolean
+        get() = sp.getBoolean("onboarded", false)
+        set(v) = sp.edit().putBoolean("onboarded", v).apply()
 
     var includeSystem: Boolean
         get() = sp.getBoolean("system", false)

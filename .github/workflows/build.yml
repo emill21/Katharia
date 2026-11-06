@@ -21,20 +21,20 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --stacktrace
-          mv app/build/outputs/apk/release/app-release.apk Sweepr.apk
+          mv app/build/outputs/apk/release/app-release.apk Katharia.apk
           echo "VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_ENV"
       - name: Publish release
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: Sweepr ${{ env.VERSION }} (build ${{ github.run_number }})
+          name: Katharia ${{ env.VERSION }} (build ${{ github.run_number }})
           body: |
-            **Install:** download **Sweepr.apk** below and open it on your phone.
-            First launch: turn on Sweepr in Accessibility (on Android 13+, App info → ⋮ → Allow restricted settings first).
-          files: Sweepr.apk
+            **Install:** download **Katharia.apk** below and open it on your phone.
+            First launch: turn on Katharia in Accessibility (on Android 13+, App info → ⋮ → Allow restricted settings first).
+          files: Katharia.apk
           make_latest: true
       - uses: actions/upload-artifact@v4
         with:
-          name: Sweepr-apk
-          path: Sweepr.apk
+          name: Katharia-apk
+          path: Katharia.apk

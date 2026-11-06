@@ -1,4 +1,4 @@
-package com.sweepr.app
+package com.katharia.app
 
 import android.annotation.SuppressLint
 import android.app.PendingIntent
@@ -29,6 +29,7 @@ class SweepTile : TileService() {
     override fun onClick() {
         super.onClick()
         if (SweepService.instance == null) {
+            AccessKeeper.ensureEnabled(this)
             openApp()
             return
         }

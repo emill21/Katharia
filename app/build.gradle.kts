@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,15 +7,29 @@ plugins {
 }
 
 android {
-    namespace = "com.sweepr.app"
+    namespace = "com.katharia.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.sweepr.app"
+        applicationId = "com.katharia.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "2.2"
+        versionCode = 6
+        versionName = "3.0"
+    }
+
+    // One fixed key for every build, so new versions install over old ones and keep
+    // Accessibility + "restricted settings" turned on. (CI's throwaway debug key changes every run.)
+    val signing = Properties().apply {
+        rootProject.file("keystore/signing.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+    }
+    signingConfigs {
+        create("katharia") {
+            storeFile = rootProject.file(signing.getProperty("storeFile", "keystore/katharia.jks"))
+            storePassword = signing.getProperty("storePassword")
+            keyAlias = signing.getProperty("keyAlias")
+            keyPassword = signing.getProperty("keyPassword")
+        }
     }
 
     buildTypes {
@@ -24,8 +40,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Signed with the debug key so the APK can be sideloaded straight away.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("katharia")
         }
     }
 
