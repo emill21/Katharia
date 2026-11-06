@@ -98,14 +98,14 @@ class SweepService : AccessibilityService() {
         val ready = poll(4000) { findTappable(text.forceStop) ?: findTappable(text.storage) }
         if (ready == null) return AppOutcome(t, notFoundIf(mode.forceStop), notFoundIf(mode.clearCache))
 
-        val stop = if (mode.forceStop) forceStop() else StepResult.Skipped
-        val cache = if (mode.clearCache) clearCache() else StepResult.Skipped
+        val stop = if (mode.forceStop) tapForceStop() else StepResult.Skipped
+        val cache = if (mode.clearCache) tapClearCache() else StepResult.Skipped
         return AppOutcome(t, stop, cache)
     }
 
     private fun notFoundIf(b: Boolean) = if (b) StepResult.NotFound else StepResult.Skipped
 
-    private suspend fun forceStop(): StepResult {
+    private suspend fun tapForceStop(): StepResult {
         val btn = poll(2500) { findTappable(text.forceStop) } ?: return StepResult.NotFound
         if (!btn.isEnabled) return StepResult.AlreadyClean // already stopped, or a protected app
         btn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
@@ -121,7 +121,7 @@ class SweepService : AccessibilityService() {
         return if (greyed != null) StepResult.Done else StepResult.NotFound
     }
 
-    private suspend fun clearCache(): StepResult {
+    private suspend fun tapClearCache(): StepResult {
         var clear = findTappable(text.clearCache) // a few skins show it right on App info
         if (clear == null) {
             val storage = findWithScroll(text.storage) ?: return StepResult.NotFound
