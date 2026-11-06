@@ -9,6 +9,7 @@ enum class SortBy(val label: String) { Cache("Biggest cache"), Name("A–Z"), Se
 
 data class Appearance(
     val themeMode: String = "system", // system | light | dark
+    val pureBlack: Boolean = false,   // true black in dark mode, for OLED
     val accent: Int = 0,              // 0 = wallpaper
     val background: String = "aurora",
 ) {
@@ -47,11 +48,16 @@ class Prefs(context: Context) {
 
     var appearance: Appearance
         get() = Appearance(
-            sp.getString("theme", "system")!!,
-            sp.getInt("accent", 0),
-            sp.getString("bg", "aurora")!!,
+            themeMode = sp.getString("theme", "system")!!,
+            pureBlack = sp.getBoolean("pure_black", false),
+            accent = sp.getInt("accent", 0),
+            background = sp.getString("bg", "aurora")!!,
         )
-        set(v) = sp.edit().putString("theme", v.themeMode).putInt("accent", v.accent).putString("bg", v.background).apply()
+        set(v) = sp.edit().putString("theme", v.themeMode).putBoolean("pure_black", v.pureBlack)
+            .putInt("accent", v.accent).putString("bg", v.background).apply()
+
+    /** When a sweep last force-stopped apps; "Close running" looks for apps used since then. */
+    val lastStopSweepAt: Long get() = sp.getLong("last_stop", 0)
 
     val lifetime: Lifetime
         get() = Lifetime(sp.getInt("sweeps", 0), sp.getLong("freed", 0), sp.getInt("stopped", 0), sp.getInt("cleared", 0))
@@ -64,6 +70,7 @@ class Prefs(context: Context) {
             .putInt("stopped", l.stopped + s.stopped)
             .putInt("cleared", l.cleared + s.cleared)
             .apply()
+        if (s.mode.forceStop && !s.cancelled) sp.edit().putLong("last_stop", System.currentTimeMillis()).apply()
     }
 }
 

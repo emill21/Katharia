@@ -219,10 +219,23 @@ fun KathariaTheme(
     dark: Boolean,
     accent: Int = 0,
     background: String = "aurora",
+    pureBlack: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
     var colors = remember(accent, dark, context) { baseScheme(context, accent, dark) }
+    if (dark && pureBlack) {
+        colors = colors.copy(
+            background = Color.Black,
+            surface = Color.Black,
+            surfaceDim = Color.Black,
+            surfaceContainerLowest = Color.Black,
+            surfaceContainerLow = Color(0xFF0B0B0B),
+            surfaceContainer = Color(0xFF121212),
+            surfaceContainerHigh = Color(0xFF1A1A1A),
+            surfaceContainerHighest = Color(0xFF232323),
+        )
+    }
     if (background != "none") colors = colors.frosted(dark)
     MaterialTheme(colorScheme = colors, typography = AppTypography, shapes = AppShapes, content = content)
 }

@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.ListAlt
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -190,6 +191,7 @@ fun HomeScreen(onReplayTour: () -> Unit = {}) {
         )
     }
     val selectedCache = if (usageOn) selected.sumOf { it.cacheBytes ?: 0L } else null
+    val runningCount = selected.count { it.active && !it.protected }
     val running = state is SweepState.Running
     val colors = MaterialTheme.colorScheme
     val look by Look.state.collectAsStateWithLifecycle()
@@ -217,9 +219,10 @@ fun HomeScreen(onReplayTour: () -> Unit = {}) {
             bottomBar = {
                 FloatingSweepBar(
                     count = selected.size,
+                    label = if (mode == SweepMode.Running) "Close $runningCount running" else null,
                     cache = if (mode.clearCache) selectedCache else null,
                     running = running,
-                    enabled = serviceOn && selected.isNotEmpty(),
+                    enabled = serviceOn && selected.isNotEmpty() && (mode != SweepMode.Running || runningCount > 0),
                     onSweep = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         confirm = true
@@ -236,6 +239,7 @@ fun HomeScreen(onReplayTour: () -> Unit = {}) {
                     Hero(
                         state = state,
                         count = selected.size,
+                        runningCount = runningCount,
                         total = all.size,
                         cache = selectedCache,
                         mode = mode,
@@ -318,6 +322,7 @@ fun HomeScreen(onReplayTour: () -> Unit = {}) {
                         Entrance(minOf(i + 5, 8)) {
                             AppRow(
                                 app = app,
+                                showActive = mode == SweepMode.Running,
                                 checked = app.packageName !in excluded,
                                 first = i == 0,
                                 last = i == shown.lastIndex,
@@ -377,6 +382,7 @@ fun HomeScreen(onReplayTour: () -> Unit = {}) {
 private fun Hero(
     state: SweepState,
     count: Int,
+    runningCount: Int,
     total: Int,
     cache: Long?,
     mode: SweepMode,
@@ -420,7 +426,10 @@ private fun Hero(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     when (state) {
-                        SweepState.Idle -> if (cache != null) {
+                        SweepState.Idle -> if (mode == SweepMode.Running) {
+                            RollingText("$runningCount", style = MaterialTheme.typography.displaySmall)
+                            OrbLabel("running now")
+                        } else if (cache != null) {
                             RollingText(Formatter.formatShortFileSize(ctx, cache), style = MaterialTheme.typography.headlineLarge)
                             OrbLabel("cache to clear")
                         } else {
@@ -456,7 +465,7 @@ private fun Hero(
             ) { s ->
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     when (s) {
-                        SweepState.Idle -> ReadyBody(count, total, cache, mode, onMode)
+                        SweepState.Idle -> ReadyBody(count, runningCount, total, cache, mode, onMode)
                         is SweepState.Running -> RunningBody(s)
                         is SweepState.Finished -> ResultBody(s)
                     }
@@ -484,13 +493,14 @@ private fun CountUpBytes(bytes: Long) {
 }
 
 @Composable
-private fun ReadyBody(count: Int, total: Int, cache: Long?, mode: SweepMode, onMode: (SweepMode) -> Unit) {
+private fun ReadyBody(count: Int, running: Int, total: Int, cache: Long?, mode: SweepMode, onMode: (SweepMode) -> Unit) {
     val ctx = LocalContext.current
     val colors = MaterialTheme.colorScheme
     HeroStatStrip(
         listOf(
             HeroStat(Icons.Rounded.Apps, "Selected", "$count of $total"),
-            HeroStat(Icons.Rounded.Storage, "Cache", cache?.let { Formatter.formatShortFileSize(ctx, it) } ?: "—"),
+            if (mode == SweepMode.Running) HeroStat(Icons.Rounded.StopCircle, "Running", "$running")
+            else HeroStat(Icons.Rounded.Storage, "Cache", cache?.let { Formatter.formatShortFileSize(ctx, it) } ?: "—"),
             HeroStat(Icons.Rounded.AutoAwesome, "Action", mode.label),
         ),
         container = colors.surfaceContainerLowest.copy(alpha = 0.6f),
@@ -502,9 +512,17 @@ private fun ReadyBody(count: Int, total: Int, cache: Long?, mode: SweepMode, onM
                 selected = m == mode,
                 onClick = { onMode(m) },
                 shape = SegmentedButtonDefaults.itemShape(index = i, count = SweepMode.entries.size),
+                icon = {},
             ) { Text(m.label, maxLines = 1) }
         }
     }
+    Spacer(Modifier.height(8.dp))
+    Text(
+        mode.blurb + if (mode == SweepMode.Running && !AppRepo.hasUsageAccess(ctx)) " (allow usage access for best results)" else "",
+        style = MaterialTheme.typography.bodySmall,
+        color = colors.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+    )
 }
 
 @Composable
@@ -667,6 +685,19 @@ private fun SweepLogSheet(s: SweepState.Finished, onDismiss: () -> Unit) {
     }
 }
 
+/** Bataria's OLED option: true black backgrounds in dark mode. */
+@Composable
+fun PureBlackRow(checked: Boolean, onChange: (Boolean) -> Unit) {
+    androidx.compose.material3.ListItem(
+        colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = Color.Transparent),
+        modifier = Modifier.clickable { onChange(!checked) },
+        leadingContent = { IconBadge(Icons.Rounded.Contrast, MaterialTheme.colorScheme.primary, 36.dp) },
+        headlineContent = { Text("Pure black") },
+        supportingContent = { Text("True black backgrounds in dark mode, ideal for OLED screens") },
+        trailingContent = { androidx.compose.material3.Switch(checked = checked, onCheckedChange = onChange) },
+    )
+}
+
 private fun formatElapsed(ms: Long): String {
     val sec = (ms / 1000).coerceAtLeast(1)
     return if (sec < 60) "${sec}s" else "${sec / 60}m ${sec % 60}s"
@@ -732,6 +763,7 @@ private fun AppearanceSheet(
                 ) { Text(label) }
             }
         }
+        PureBlackRow(look.pureBlack) { onChange(look.copy(pureBlack = it)) }
         SectionHeader("Accent", Modifier.padding(start = 16.dp, bottom = 8.dp))
         AccentPicker(selected = look.accent) { onChange(look.copy(accent = it)) }
         SectionHeader("Background", Modifier.padding(start = 16.dp, bottom = 8.dp))
@@ -841,7 +873,7 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
 
 /** One app, drawn as part of a grouped list: big rounding at the ends, small in between. */
 @Composable
-private fun AppRow(app: InstalledApp, checked: Boolean, first: Boolean, last: Boolean, onToggle: () -> Unit) {
+private fun AppRow(app: InstalledApp, checked: Boolean, first: Boolean, last: Boolean, showActive: Boolean = false, onToggle: () -> Unit) {
     val ctx = LocalContext.current
     val colors = MaterialTheme.colorScheme
     val big = 28.dp
@@ -873,6 +905,7 @@ private fun AppRow(app: InstalledApp, checked: Boolean, first: Boolean, last: Bo
             val sub = buildString {
                 app.cacheBytes?.let { append(Formatter.formatShortFileSize(ctx, it)).append(" cache") }
                 if (app.system) { if (isNotEmpty()) append(" · "); append("System") }
+                if (showActive && app.active && !app.protected) { if (isNotEmpty()) append(" · "); append("Running") }
             }
             if (sub.isNotEmpty() || app.protected) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -915,6 +948,7 @@ private fun AppIcon(ctx: Context, app: InstalledApp) {
 @Composable
 private fun FloatingSweepBar(
     count: Int,
+    label: String?,
     cache: Long?,
     running: Boolean,
     enabled: Boolean,
@@ -950,7 +984,7 @@ private fun FloatingSweepBar(
                 Spacer(Modifier.width(10.dp))
                 val extra = if (cache != null && cache > 0) " · ${Formatter.formatShortFileSize(ctx, cache)}" else ""
                 Text(
-                    if (running) "Stop sweep" else "Sweep $count ${if (count == 1) "app" else "apps"}$extra",
+                    if (running) "Stop sweep" else label ?: "Sweep $count ${if (count == 1) "app" else "apps"}$extra",
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(horizontal = 8.dp),
                 )

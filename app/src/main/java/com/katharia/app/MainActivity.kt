@@ -41,7 +41,7 @@ class MainActivity : ComponentActivity() {
                 onDispose { }
             }
             var onboarded by remember { mutableStateOf(prefs.onboarded) }
-            KathariaTheme(dark, look.accent, look.background) {
+            KathariaTheme(dark, look.accent, look.background, look.pureBlack) {
                 AnimatedContent(onboarded, transitionSpec = { fadeIn(tween(400)) togetherWith fadeOut(tween(250)) }, label = "root") { done ->
                     if (done) HomeScreen(onReplayTour = { onboarded = false })
                     else OnboardingScreen(look) { prefs.onboarded = true; onboarded = true }

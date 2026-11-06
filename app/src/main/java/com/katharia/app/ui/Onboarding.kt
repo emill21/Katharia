@@ -469,7 +469,10 @@ private fun LookPage(appearance: Appearance) {
                     ) { Text(label) }
                 }
             }
-            FieldLabel("Accent color", top = 18.dp)
+        }
+        PureBlackRow(appearance.pureBlack) { Look.update(ctx, appearance.copy(pureBlack = it)) }
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            FieldLabel("Accent color", top = 8.dp)
         }
         AccentPicker(selected = appearance.accent) { Look.update(ctx, appearance.copy(accent = it)) }
         Column(Modifier.padding(horizontal = 16.dp)) { FieldLabel("Animated background", top = 18.dp) }

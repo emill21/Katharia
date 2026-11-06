@@ -14,6 +14,7 @@ import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.LinearLayout
 import android.widget.TextView
 import kotlinx.coroutines.CancellationException
@@ -88,6 +89,9 @@ class SweepService : AccessibilityService() {
                     }
                     delay(350)
                 }
+                activeSet = if (mode == SweepMode.Running) withContext(Dispatchers.IO) {
+                    AppRepo.recentlyActive(this@SweepService, Prefs(this@SweepService).lastStopSweepAt)
+                } else null
                 // Start straight away: cache is measured per app as we go, not all up front.
                 showOverlay()
                 list.forEachIndexed { i, t ->
@@ -135,6 +139,9 @@ class SweepService : AccessibilityService() {
         job?.cancel()
     }
 
+    /** Apps opened or running something in the foreground recently (for "Close running"). */
+    private var activeSet: Set<String>? = null
+
     private suspend fun sweepOne(t: Target, mode: SweepMode): AppOutcome {
         val t0 = System.currentTimeMillis()
         val trace = StringBuilder()
@@ -143,7 +150,9 @@ class SweepService : AccessibilityService() {
         // Skip Settings entirely when we already know there's nothing to do — the biggest speed win.
         val wantStop = mode.forceStop && !t.protect
         val (needStop, cacheNow) = withContext(Dispatchers.IO) {
-            (wantStop && !AppRepo.isStopped(this@SweepService, t.packageName)) to
+            val stopped = AppRepo.isStopped(this@SweepService, t.packageName)
+            val active = activeSet?.let { t.packageName in it } ?: true
+            (wantStop && !stopped && (mode != SweepMode.Running || active)) to
                 (if (mode.clearCache) AppRepo.cacheOf(this@SweepService, t.packageName) else null)
         }
         val needCache = mode.clearCache && (cacheNow == null || cacheNow >= MIN_CACHE_BYTES)
@@ -157,16 +166,14 @@ class SweepService : AccessibilityService() {
             )
         }
 
-        // The page we're leaving. A new App info page is a new window, so we can tell the moment it's up
-        // without relying on the app's name being shown exactly as we have it.
-        val oldWindow = currentWindowIds()
+        // A new App info page is a new window (or shows the app's name), so we know the instant it's up.
+        val oldWindows = snap().windowIds
         while (changed.tryReceive().isSuccess) Unit
         openAppInfo(t.packageName, clearTask = false)
-        var ready = poll(1800) { pageReady(oldWindow, t.label) }
+        var ready = poll(1800) { pageReady(oldWindows, t.label) }
         if (ready == null) {
-            // This Settings build didn't swap the page in place; fall back to a full relaunch.
             mark("relaunch")
-            val old2 = currentWindowIds()
+            val old2 = snap().windowIds
             openAppInfo(t.packageName, clearTask = true)
             ready = poll(3500) { pageReady(old2, t.label) }
         }
@@ -189,63 +196,64 @@ class SweepService : AccessibilityService() {
         return done(stop, cache)
     }
 
-    private fun currentWindowIds(): Set<Int> =
-        roots().map { it.windowId }.toSet()
-
-    /** A button from the *new* App info page: either in a window that wasn't there before, or on a page showing the app's name. */
-    private fun pageReady(oldWindows: Set<Int>, label: String): AccessibilityNodeInfo? {
-        val all = roots()
-        val fresh = all.filter { it.windowId !in oldWindows }
-        val pool = when {
-            fresh.isNotEmpty() -> fresh
-            all.any { r -> r.findAccessibilityNodeInfosByText(label).orEmpty().any { it.isVisibleToUser } } -> all
-            else -> return null
-        }
-        return findTappable(text.forceStop, pool) ?: findTappable(text.storage, pool) ?: findTappable(text.clearCache, pool)
+    private fun pageReady(oldWindows: Set<Int>, label: String): Hit? {
+        val sc = snap()
+        val fresh = sc.windowIds.any { it !in oldWindows }
+        if (!fresh && !sc.hasText(label.normalized())) return null
+        return sc.find(text.forceStop) ?: sc.find(text.storage) ?: sc.find(text.clearCache)
     }
 
     private fun notFoundIf(b: Boolean) = if (b) StepResult.NotFound else StepResult.Skipped
 
     private suspend fun tapForceStop(): StepResult {
-        val btn = poll(2500) { findTappable(text.forceStop) } ?: return StepResult.NotFound
-        if (!btn.isEnabled) return StepResult.AlreadyClean // already stopped, or a protected app
-        btn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        val btn = poll(2000) { snap().find(text.forceStop) } ?: return StepResult.NotFound
+        if (!btn.enabled) return StepResult.AlreadyClean // already stopped, or a protected app
+        btn.click()
 
-        val ok = poll(2500) { findConfirm(exclude = btn) }
+        val ok = poll(2000) { snap().findConfirm(btn) }
         if (ok != null) {
-            ok.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            // Move on the moment the dialog is gone instead of a fixed pause.
-            poll(800) { if (roots().none { r -> r.findAccessibilityNodeInfosByViewId("android:id/button1").orEmpty().any { it.isVisibleToUser } }) true else null }
+            ok.click()
+            // Move on the moment the dialog is gone.
+            poll(700) { snap().takeIf { it.findConfirm(btn) == null } }
             return StepResult.Done
         }
         // Some skins stop the app straight away with no dialog; the button greys out.
-        val greyed = poll(1200) { findTappable(text.forceStop)?.takeIf { !it.isEnabled } }
+        val greyed = poll(1000) { snap().find(text.forceStop)?.takeIf { !it.enabled } }
         return if (greyed != null) StepResult.Done else StepResult.NotFound
     }
 
     private suspend fun tapClearCache(knownCache: Long?): StepResult {
-        var clear = findTappable(text.clearCache) // a few skins show it right on App info
+        var clear = snap().find(text.clearCache) // a few skins show it right on App info
         if (clear == null) {
             val storage = findWithScroll(text.storage) ?: return StepResult.NotFound
-            storage.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            clear = poll(4500) { findTappable(text.clearCache) } ?: return StepResult.NotFound
+            storage.click()
+            clear = poll(4000) { snap().find(text.clearCache) } ?: return StepResult.NotFound
         }
-        // Settings greys the button out until it has measured the cache; give it a moment.
-        // If we know there's cache, wait longer for it to light up; if we don't, give up sooner.
-        if (!clear.isEnabled) {
-            clear = poll(if (knownCache != null) 2500 else 1000) { findTappable(text.clearCache)?.takeIf { it.isEnabled } }
+        // Settings greys the button out until it has measured the cache.
+        if (!clear.enabled) {
+            clear = poll(if (knownCache != null) 2500 else 1000) { snap().find(text.clearCache)?.takeIf { it.enabled } }
                 ?: return StepResult.AlreadyClean
         }
-        clear.performAction(AccessibilityNodeInfo.ACTION_CLICK) // returns once Settings has handled the tap
+        clear.click() // returns once Settings has handled the tap
         delay(40)
         return StepResult.Done
+    }
+
+    private suspend fun findWithScroll(labels: Set<String>): Hit? {
+        repeat(6) {
+            val sc = snap()
+            sc.find(labels)?.let { return it }
+            val scroller = sc.items.firstOrNull { it.node.isScrollable } ?: return poll(1200) { snap().find(labels) }
+            scroller.node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            poll(300) { snap().find(labels) }?.let { return it }
+        }
+        return null
     }
 
     private fun openAppInfo(pkg: String, clearTask: Boolean) {
         val i = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", pkg, null))
             .addFlags(
-                // CLEAR_TOP swaps the App info page in place inside Settings' own task. (CLEAR_TASK tore the
-                // whole task down each time, flashing Katharia's screen underneath between apps.)
+                // CLEAR_TOP swaps the App info page in place inside Settings' own task; CLEAR_TASK is the fallback.
                 Intent.FLAG_ACTIVITY_NEW_TASK or
                     (if (clearTask) Intent.FLAG_ACTIVITY_CLEAR_TASK else Intent.FLAG_ACTIVITY_CLEAR_TOP) or
                     Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
@@ -263,101 +271,122 @@ class SweepService : AccessibilityService() {
         }
     }
 
-    // ---------------------------------------------------------------- finding buttons
+    // ---------------------------------------------------------------- reading the screen
+    //
+    // Newer Settings (Android 14+ on Pixel and others) is built with Jetpack Compose, where Android's
+    // built-in "find by text" search returns nothing. So instead we take one snapshot of the screen per
+    // check — every visible element with its label, parent and state — and search that locally. It works
+    // on both old and new Settings, and one walk is faster than many separate searches.
 
-    private fun roots(): List<AccessibilityNodeInfo> {
-        val list = mutableListOf<AccessibilityNodeInfo>()
-        rootInActiveWindow?.let { list += it }
-        runCatching { windows }.getOrNull()?.forEach { w -> w.root?.let { if (it != list.firstOrNull()) list += it } }
-        // Ignore our own overlay and the status/navigation bars.
-        return list.filter { val p = it.packageName?.toString(); p != packageName && p != "com.android.systemui" }
+    private class Item(val node: AccessibilityNodeInfo, val label: String, val parent: Int, val id: String?)
+
+    inner class Hit(val node: AccessibilityNodeInfo, val enabled: Boolean) {
+        fun click() = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
     }
 
-    private fun anyRootHasText(s: String): Boolean =
-        roots().any { r -> r.findAccessibilityNodeInfosByText(s).orEmpty().any { it.isVisibleToUser } }
+    private inner class Screen(val items: List<Item>, val windowIds: Set<Int>) {
+        fun hasText(s: String) = items.any { it.label.contains(s) }
 
-    /** Finds a visible element whose whole label is one of [labels], and returns the thing to tap on. */
-    private fun findTappable(labels: Set<String>, pool: List<AccessibilityNodeInfo> = roots()): AccessibilityNodeInfo? {
-        for (root in pool) {
-            val hit = findExact(root, labels) ?: continue
-            return tappableFor(hit)
+        /** First visible element whose label is one of [labels], resolved to the thing you'd tap. */
+        fun find(labels: Set<String>): Hit? {
+            for (i in items.indices) if (matches(items[i].label, labels)) tappable(i)?.let { return it }
+            return null
         }
-        return null
-    }
 
-    /** One search per label, done inside the Settings process — far faster than walking every node. */
-    private fun findExact(root: AccessibilityNodeInfo, labels: Set<String>): AccessibilityNodeInfo? {
-        for (l in labels) {
-            root.findAccessibilityNodeInfosByText(l).orEmpty()
-                .firstOrNull { it.isVisibleToUser && it.label() in labels }
-                ?.let { return it }
+        fun findConfirm(exclude: Hit): Hit? {
+            items.indices.firstOrNull { items[it].id == "android:id/button1" }?.let { i ->
+                val h = tappable(i)
+                if (h != null && h.node != exclude.node && h.enabled && !matches(items[i].label, text.forbidden)) return h
+            }
+            for (i in items.indices) {
+                if (!matches(items[i].label, text.confirm)) continue
+                val h = tappable(i) ?: continue
+                if (h.node != exclude.node && h.enabled) return h
+            }
+            return null
         }
-        return null
-    }
 
-    private fun findConfirm(exclude: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        for (root in roots()) {
-            root.findAccessibilityNodeInfosByViewId("android:id/button1").orEmpty()
-                .firstOrNull { it.isVisibleToUser && it.isEnabled && it != exclude && it.label() !in text.forbidden }
-                ?.let { return it }
-        }
-        for (root in roots()) {
-            for (l in text.confirm) {
-                for (hit in root.findAccessibilityNodeInfosByText(l).orEmpty()) {
-                    if (!hit.isVisibleToUser || hit.label() !in text.confirm) continue
-                    val t = tappableFor(hit) ?: continue
-                    if (t != exclude && t.isEnabled) return t
+        /** The element itself if tappable, else its nearest tappable parent — never one holding a dangerous button. */
+        private fun tappable(i: Int): Hit? {
+            var c = i
+            var depth = 0
+            while (c >= 0 && depth < 6) {
+                val n = items[c].node
+                if (n.isClickable) {
+                    if (holdsForbidden(c)) return null
+                    return Hit(n, n.isEnabled && items[i].node.isEnabled)
                 }
+                c = items[c].parent
+                depth++
+            }
+            return null
+        }
+
+        private fun holdsForbidden(container: Int): Boolean = items.indices.any { j ->
+            j != container && matches(items[j].label, text.forbidden) && isInside(j, container)
+        } || matches(items[container].label, text.forbidden)
+
+        private fun isInside(j: Int, container: Int): Boolean {
+            var p = items[j].parent
+            var d = 0
+            while (p >= 0 && d < 8) {
+                if (p == container) return true
+                p = items[p].parent
+                d++
+            }
+            return false
+        }
+    }
+
+    /** Whole-label match. Compose can merge a row's texts ("Storage & cache, 12 MB used"), so the first part counts too. */
+    private fun matches(label: String, set: Set<String>): Boolean {
+        if (label.isEmpty()) return false
+        if (label in set) return true
+        val first = label.substringBefore(", ").substringBefore('\n')
+        return first != label && first in set
+    }
+
+    private fun snap(): Screen {
+        val items = ArrayList<Item>(256)
+        val ids = HashSet<Int>()
+        for (root in roots()) {
+            ids += root.windowId
+            val queue = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
+            queue += root to -1
+            var budget = 900
+            while (queue.isNotEmpty() && budget-- > 0) {
+                val (n, parent) = queue.removeFirst()
+                if (parent >= 0 && !n.isVisibleToUser) continue
+                val idx = items.size
+                items += Item(n, n.label(), parent, n.viewIdResourceName)
+                for (c in 0 until n.childCount) child(n, c)?.let { queue += it to idx }
             }
         }
-        return null
+        return Screen(items, ids)
     }
 
-    /** The label itself if it's tappable, otherwise the nearest tappable parent row — never one that also holds a dangerous button. */
-    private fun tappableFor(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        var n: AccessibilityNodeInfo? = node
-        var depth = 0
-        while (n != null && depth < 5) {
-            if (n.isClickable) return if (subtreeHasForbidden(n)) null else n
-            n = n.parent
-            depth++
-        }
-        return null
+    /** App windows only (Settings and its dialogs) — skips the keyboard, status bar and our own banner. */
+    private fun roots(): List<AccessibilityNodeInfo> {
+        val out = mutableListOf<AccessibilityNodeInfo>()
+        runCatching { windows }.getOrNull().orEmpty()
+            .filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+            .forEach { w -> rootOf(w)?.let { out += it } }
+        if (out.isEmpty()) activeRoot()?.let { out += it }
+        return out.filter { it.packageName?.toString() != packageName }
     }
 
-    private fun subtreeHasForbidden(node: AccessibilityNodeInfo): Boolean =
-        text.forbidden.any { f -> node.findAccessibilityNodeInfosByText(f).orEmpty().any { it.label() in text.forbidden } }
+    private fun activeRoot(): AccessibilityNodeInfo? =
+        if (Build.VERSION.SDK_INT >= 33) getRootInActiveWindow(AccessibilityNodeInfo.FLAG_PREFETCH_DESCENDANTS_HYBRID)
+        else rootInActiveWindow
 
-    private suspend fun findWithScroll(labels: Set<String>): AccessibilityNodeInfo? {
-        repeat(6) {
-            findTappable(labels)?.let { return it }
-            val scroller = roots().firstNotNullOfOrNull { r -> bfs(r) { it.isScrollable && it.isVisibleToUser } }
-                ?: return poll(1500) { findTappable(labels) }
-            scroller.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
-            poll(300) { findTappable(labels) }?.let { return it }
-        }
-        return findTappable(labels)
-    }
+    private fun rootOf(w: AccessibilityWindowInfo): AccessibilityNodeInfo? =
+        if (Build.VERSION.SDK_INT >= 33) w.getRoot(AccessibilityNodeInfo.FLAG_PREFETCH_DESCENDANTS_HYBRID) else w.root
+
+    private fun child(n: AccessibilityNodeInfo, i: Int): AccessibilityNodeInfo? =
+        if (Build.VERSION.SDK_INT >= 33) n.getChild(i, AccessibilityNodeInfo.FLAG_PREFETCH_DESCENDANTS_HYBRID) else n.getChild(i)
 
     private fun AccessibilityNodeInfo.label(): String =
-        (text ?: contentDescription)?.normalized() ?: ""
-
-    private fun bfs(
-        root: AccessibilityNodeInfo,
-        limit: Int = 800,
-        match: (AccessibilityNodeInfo) -> Boolean,
-    ): AccessibilityNodeInfo? {
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue += root
-        var seen = 0
-        while (queue.isNotEmpty() && seen < limit) {
-            val n = queue.removeFirst()
-            seen++
-            if (match(n)) return n
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue += it }
-        }
-        return null
-    }
+        (text?.takeIf { it.isNotBlank() } ?: contentDescription)?.normalized() ?: ""
 
     /** Re-checks [block] whenever the screen changes (or every 120 ms) until it returns something. */
     private suspend fun <T> poll(timeoutMs: Long, block: () -> T?): T? {
