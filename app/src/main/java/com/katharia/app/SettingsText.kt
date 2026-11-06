@@ -12,6 +12,10 @@ class SettingsText(context: Context) {
     val confirm: Set<String>
     val storage: Set<String>
     val clearCache: Set<String>
+    val storagePrefix: Set<String>
+    val cacheConfirm: Set<String>
+    /** Xiaomi's App info has no Storage row: "Clear data" opens a menu with "Clear cache" in it. */
+    val miuiClearData: Set<String>
 
     /** Buttons we must never press, whatever happens. */
     val forbidden: Set<String>
@@ -31,8 +35,15 @@ class SettingsText(context: Context) {
         )
         storage = norm(
             s("storage_settings_for_app", "storage_label", "storage_settings", "storage_use") +
-                listOf("Storage & cache", "Storage and cache", "Storage")
+                listOf("Storage & cache", "Storage and cache", "Storage", "Storage usage", "Storage used", "App storage")
         )
+        // First word of each storage label ("storage"), for rows like "Storage usage" we don't know by heart.
+        storagePrefix = storage.map { it.substringBefore(' ') }.filter { it.length >= 4 }.toSet()
+        cacheConfirm = norm(
+            s("dlg_ok", "okay", "clear_cache_btn_text") +
+                listOf(context.getString(android.R.string.ok), "OK", "Ok", "Clear cache", "Clear", "Delete", "Confirm")
+        )
+        miuiClearData = norm(listOf("Clear data", "Clear storage"))
         clearCache = norm(s("clear_cache_btn_text") + listOf("Clear cache", "Clear Cache"))
         forbidden = norm(
             s("clear_user_data_text", "clear_storage_btn_text", "uninstall_text", "disable_text") +

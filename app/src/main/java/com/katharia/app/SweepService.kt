@@ -189,7 +189,7 @@ class SweepService : AccessibilityService() {
             else -> StepResult.Skipped
         }
         val cache = when {
-            needCache -> tapClearCache(knownCache = cacheNow).also { mark("cache:$it") }
+            needCache -> tapClearCache(knownCache = cacheNow) { mark(it) }.also { mark("cache:$it") }
             mode.clearCache -> StepResult.AlreadyClean
             else -> StepResult.Skipped
         }
@@ -222,20 +222,50 @@ class SweepService : AccessibilityService() {
         return if (greyed != null) StepResult.Done else StepResult.NotFound
     }
 
-    private suspend fun tapClearCache(knownCache: Long?): StepResult {
+    private suspend fun tapClearCache(knownCache: Long?, note: (String) -> Unit): StepResult {
         var clear = snap().find(text.clearCache) // a few skins show it right on App info
         if (clear == null) {
-            val storage = findWithScroll(text.storage) ?: return StepResult.NotFound
-            storage.click()
-            clear = poll(4000) { snap().find(text.clearCache) } ?: return StepResult.NotFound
+            val storage = findWithScroll(text.storage)
+                ?: snap().findStartingWith(text.storagePrefix).also { if (it != null) note("storage~") }
+            if (storage != null) {
+                storage.click()
+                clear = poll(4000) { snap().find(text.clearCache) }
+                if (clear == null) { note("no clear-cache button"); return StepResult.NotFound }
+            } else if (snap().packages.any { it == MIUI }) {
+                // Xiaomi / HyperOS: Clear data → menu → Clear cache. (Here "Clear data" only opens a menu.)
+                val menu = snap().find(text.miuiClearData, allowForbidden = true)
+                if (menu == null) { note("miui: no clear-data menu"); return StepResult.NotFound }
+                menu.click()
+                clear = poll(2500) { snap().find(text.clearCache) }
+                if (clear == null) { note("miui: no clear-cache item"); return StepResult.NotFound }
+                note("miui")
+            } else {
+                note("no storage row")
+                return StepResult.NotFound
+            }
         }
         // Settings greys the button out until it has measured the cache.
         if (!clear.enabled) {
-            clear = poll(if (knownCache != null) 2500 else 1000) { snap().find(text.clearCache)?.takeIf { it.enabled } }
-                ?: return StepResult.AlreadyClean
+            clear = poll(if (knownCache != null) 2500 else 1200) { snap().find(text.clearCache)?.takeIf { it.enabled } }
+            if (clear == null) { note("clear-cache greyed out"); return StepResult.AlreadyClean }
         }
-        clear.click() // returns once Settings has handled the tap
-        delay(40)
+        val before = snap().windowIds
+        clear.click()
+
+        // Either the button greys out (cleared — the usual case), or a "Clear cache?" dialog pops up
+        // (Xiaomi, ColorOS…), which we confirm. Whichever happens first.
+        var confirmed = false
+        val cleared = poll(1200) {
+            val sc = snap()
+            val dialog = if (!confirmed) sc.findDialogButton(before, text.cacheConfirm, exclude = clear) else null
+            if (dialog != null) {
+                dialog.click(); confirmed = true; note("confirmed"); null
+            } else {
+                val btn = sc.find(text.clearCache)
+                if (btn == null || !btn.enabled) true else null
+            }
+        }
+        if (cleared == null) note("unverified")
         return StepResult.Done
     }
 
@@ -278,18 +308,40 @@ class SweepService : AccessibilityService() {
     // check — every visible element with its label, parent and state — and search that locally. It works
     // on both old and new Settings, and one walk is faster than many separate searches.
 
-    private class Item(val node: AccessibilityNodeInfo, val label: String, val parent: Int, val id: String?)
+    private class Item(val node: AccessibilityNodeInfo, val label: String, val parent: Int, val id: String?, val window: Int)
 
     inner class Hit(val node: AccessibilityNodeInfo, val enabled: Boolean) {
         fun click() = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
     }
 
-    private inner class Screen(val items: List<Item>, val windowIds: Set<Int>) {
+    private inner class Screen(val items: List<Item>, val windowIds: Set<Int>, val packages: Set<String>) {
         fun hasText(s: String) = items.any { it.label.contains(s) }
 
         /** First visible element whose label is one of [labels], resolved to the thing you'd tap. */
-        fun find(labels: Set<String>): Hit? {
-            for (i in items.indices) if (matches(items[i].label, labels)) tappable(i)?.let { return it }
+        fun find(labels: Set<String>, allowForbidden: Boolean = false): Hit? {
+            for (i in items.indices) if (matches(items[i].label, labels)) tappable(i, allowForbidden)?.let { return it }
+            return null
+        }
+
+        /** A row whose label starts with one of [prefixes], e.g. "Storage usage" — never a "Clear…" button. */
+        fun findStartingWith(prefixes: Set<String>): Hit? {
+            for (i in items.indices) {
+                val l = items[i].label
+                if (prefixes.any { l.startsWith(it) } && !matches(l, text.forbidden)) tappable(i)?.let { return it }
+            }
+            return null
+        }
+
+        /** A confirm button in a window that appeared after [before] (i.e. a fresh dialog). */
+        fun findDialogButton(before: Set<Int>, labels: Set<String>, exclude: Hit): Hit? {
+            for (i in items.indices) {
+                val x = items[i]
+                if (x.window in before) continue
+                if (x.id != "android:id/button1" && !matches(x.label, labels)) continue
+                if (matches(x.label, text.forbidden)) continue
+                val h = tappable(i) ?: continue
+                if (h.node != exclude.node && h.enabled) return h
+            }
             return null
         }
 
@@ -307,13 +359,13 @@ class SweepService : AccessibilityService() {
         }
 
         /** The element itself if tappable, else its nearest tappable parent — never one holding a dangerous button. */
-        private fun tappable(i: Int): Hit? {
+        private fun tappable(i: Int, allowForbidden: Boolean = false): Hit? {
             var c = i
             var depth = 0
             while (c >= 0 && depth < 6) {
                 val n = items[c].node
                 if (n.isClickable) {
-                    if (holdsForbidden(c)) return null
+                    if (!allowForbidden && holdsForbidden(c)) return null
                     return Hit(n, n.isEnabled && items[i].node.isEnabled)
                 }
                 c = items[c].parent
@@ -349,8 +401,10 @@ class SweepService : AccessibilityService() {
     private fun snap(): Screen {
         val items = ArrayList<Item>(256)
         val ids = HashSet<Int>()
+        val pkgs = HashSet<String>()
         for (root in roots()) {
             ids += root.windowId
+            root.packageName?.let { pkgs += it.toString() }
             val queue = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
             queue += root to -1
             var budget = 900
@@ -358,11 +412,11 @@ class SweepService : AccessibilityService() {
                 val (n, parent) = queue.removeFirst()
                 if (parent >= 0 && !n.isVisibleToUser) continue
                 val idx = items.size
-                items += Item(n, n.label(), parent, n.viewIdResourceName)
+                items += Item(n, n.label(), parent, n.viewIdResourceName, root.windowId)
                 for (c in 0 until n.childCount) child(n, c)?.let { queue += it to idx }
             }
         }
-        return Screen(items, ids)
+        return Screen(items, ids, pkgs)
     }
 
     /** App windows only (Settings and its dialogs) — skips the keyboard, status bar and our own banner. */
@@ -463,6 +517,7 @@ class SweepService : AccessibilityService() {
     }
 
     companion object {
+        private const val MIUI = "com.miui.securitycenter"
         /** Caches smaller than this aren't worth a trip to Settings; they refill instantly anyway. */
         const val MIN_CACHE_BYTES = 64L * 1024
 
