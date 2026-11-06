@@ -23,15 +23,18 @@ jobs:
           ./gradlew assembleRelease --stacktrace
           mv app/build/outputs/apk/release/app-release.apk Katharia.apk
           echo "VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_ENV"
+      - name: Release notes
+        run: |
+          jq -r '.[0] | "## \(.title)\n\n" + (.items | map("- " + .) | join("\n"))' app/src/main/assets/changelog.json > notes.md
+          printf '\n\n**Install:** download **Katharia.apk** below and open it on your phone. It installs over the previous version and keeps your settings.\n\nFull history: [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)\n' >> notes.md
+          cat notes.md
       - name: Publish release
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: Katharia ${{ env.VERSION }} (build ${{ github.run_number }})
-          body: |
-            **Install:** download **Katharia.apk** below and open it on your phone.
-            First launch: turn on Katharia in Accessibility (on Android 13+, App info → ⋮ → Allow restricted settings first).
+          body_path: notes.md
           files: Katharia.apk
           make_latest: true
       - uses: actions/upload-artifact@v4

@@ -1,0 +1,88 @@
+[
+  {
+    "version": "3.3",
+    "date": "2026-11-06",
+    "title": "Cache clearing on Pixel",
+    "items": [
+      "Fixed Clear cache not being found on Pixel phones running Android 16 and 17",
+      "Katharia now picks the exact \"Storage & cache\" row first, taps it again if the page was still loading, and recognises differently worded Clear cache buttons",
+      "If something still can't be found, the sweep log now lists what was on screen so it can be fixed quickly",
+      "New: this changelog. You'll see what's new after each update, and the full history is in the palette menu"
+    ]
+  },
+  {
+    "version": "3.2",
+    "date": "2026-11-06",
+    "title": "Cache clearing on more phones",
+    "items": [
+      "Recognises more Storage row names (\"Storage usage\", \"Storage used\", \"App storage\")",
+      "Xiaomi, Redmi and POCO: clears cache through the Clear data menu",
+      "Confirms \"Clear cache?\" pop-ups on phones that ask",
+      "Checks that the cache really cleared, and the sweep log says why if it didn't"
+    ]
+  },
+  {
+    "version": "3.1",
+    "date": "2026-11-06",
+    "title": "Close what's running",
+    "items": [
+      "New Running mode: only force-stops apps you've used since the last stop-sweep",
+      "Pure black option for OLED screens, just like Bataria",
+      "Fixed apps not being cleaned on Settings screens built with Jetpack Compose (Android 14 and later)"
+    ]
+  },
+  {
+    "version": "3.0",
+    "date": "2026-11-06",
+    "title": "Hello, Katharia",
+    "items": [
+      "Sweepr is now called Katharia, Greek for \"clean\"",
+      "New welcome tour that walks you through setup",
+      "Updates now install over the previous version and keep your permissions",
+      "Optional auto-restore: with a one-time computer command, Katharia can switch itself back on"
+    ]
+  },
+  {
+    "version": "2.2",
+    "date": "2026-11-06",
+    "title": "Faster start",
+    "items": [
+      "Sweeps start instantly instead of measuring every app first",
+      "App info pages swap in place, with no flash of the app between apps",
+      "New sweep log with per-app timings"
+    ]
+  },
+  {
+    "version": "2.1",
+    "date": "2026-11-06",
+    "title": "Much faster sweeps",
+    "items": [
+      "Apps that are already stopped or have almost no cache are skipped instantly",
+      "Reacts the moment Settings updates, with no fixed pauses",
+      "Shows how long each sweep took"
+    ]
+  },
+  {
+    "version": "2.0",
+    "date": "2026-11-06",
+    "title": "The big upgrade",
+    "items": [
+      "Animated cache orb, radar progress ring, live ticker and a celebration when you're done",
+      "Quick Settings tile and a Sweep now home-screen shortcut",
+      "Auto-protects your keyboard, launcher, phone and SMS apps",
+      "Sorting, all-time stats and the Bataria appearance options"
+    ]
+  },
+  {
+    "version": "1.1",
+    "date": "2026-11-06",
+    "title": "Looks like Bataria",
+    "items": ["Same theme, aurora background, cards, floating button and icon style as Bataria"]
+  },
+  {
+    "version": "1.0",
+    "date": "2026-11-06",
+    "title": "First release",
+    "items": ["Clear cache and force stop every app you pick, using Accessibility"]
+  }
+]

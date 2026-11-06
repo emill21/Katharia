@@ -38,6 +38,10 @@ class Prefs(context: Context) {
         get() = runCatching { SortBy.valueOf(sp.getString("sort", null)!!) }.getOrDefault(SortBy.Cache)
         set(v) = sp.edit().putString("sort", v.name).apply()
 
+    var lastSeenVersion: Int
+        get() = sp.getInt("last_seen_version", 0)
+        set(v) = sp.edit().putInt("last_seen_version", v).apply()
+
     var onboarded: Boolean
         get() = sp.getBoolean("onboarded", false)
         set(v) = sp.edit().putBoolean("onboarded", v).apply()

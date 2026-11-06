@@ -225,12 +225,18 @@ class SweepService : AccessibilityService() {
     private suspend fun tapClearCache(knownCache: Long?, note: (String) -> Unit): StepResult {
         var clear = snap().find(text.clearCache) // a few skins show it right on App info
         if (clear == null) {
-            val storage = findWithScroll(text.storage)
+            val storage = findWithScroll(text.storage, ordered = true)
                 ?: snap().findStartingWith(text.storagePrefix).also { if (it != null) note("storage~") }
             if (storage != null) {
                 storage.click()
-                clear = poll(4000) { snap().find(text.clearCache) }
-                if (clear == null) { note("no clear-cache button"); return StepResult.NotFound }
+                clear = poll(2200) { findClearCache() }
+                if (clear == null) {
+                    // The tap can land while the page is still settling (seen on Pixel). Tap the row again.
+                    val again = snap().find(text.storage) ?: snap().findStartingWith(text.storagePrefix)
+                    if (again != null) { again.click(); note("retap") }
+                    clear = poll(3000) { findClearCache() }
+                }
+                if (clear == null) { note("no clear-cache button; screen: ${snap().describe()}"); return StepResult.NotFound }
             } else if (snap().packages.any { it == MIUI }) {
                 // Xiaomi / HyperOS: Clear data → menu → Clear cache. (Here "Clear data" only opens a menu.)
                 val menu = snap().find(text.miuiClearData, allowForbidden = true)
@@ -240,13 +246,13 @@ class SweepService : AccessibilityService() {
                 if (clear == null) { note("miui: no clear-cache item"); return StepResult.NotFound }
                 note("miui")
             } else {
-                note("no storage row")
+                note("no storage row; screen: ${snap().describe()}")
                 return StepResult.NotFound
             }
         }
         // Settings greys the button out until it has measured the cache.
         if (!clear.enabled) {
-            clear = poll(if (knownCache != null) 2500 else 1200) { snap().find(text.clearCache)?.takeIf { it.enabled } }
+            clear = poll(if (knownCache != null) 2500 else 1200) { findClearCache()?.takeIf { it.enabled } }
             if (clear == null) { note("clear-cache greyed out"); return StepResult.AlreadyClean }
         }
         val before = snap().windowIds
@@ -261,7 +267,7 @@ class SweepService : AccessibilityService() {
             if (dialog != null) {
                 dialog.click(); confirmed = true; note("confirmed"); null
             } else {
-                val btn = sc.find(text.clearCache)
+                val btn = sc.find(text.clearCache) ?: sc.findCacheLike()
                 if (btn == null || !btn.enabled) true else null
             }
         }
@@ -269,10 +275,13 @@ class SweepService : AccessibilityService() {
         return StepResult.Done
     }
 
-    private suspend fun findWithScroll(labels: Set<String>): Hit? {
+    /** "Clear cache", or anything close to it ("Clear app cache", "Clear cached data"…). */
+    private fun findClearCache(): Hit? = snap().let { it.find(text.clearCache) ?: it.findCacheLike() }
+
+    private suspend fun findWithScroll(labels: Set<String>, ordered: Boolean = false): Hit? {
         repeat(6) {
             val sc = snap()
-            sc.find(labels)?.let { return it }
+            (if (ordered) sc.findOrdered(labels) else sc.find(labels))?.let { return it }
             val scroller = sc.items.firstOrNull { it.node.isScrollable } ?: return poll(1200) { snap().find(labels) }
             scroller.node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
             poll(300) { snap().find(labels) }?.let { return it }
@@ -323,6 +332,15 @@ class SweepService : AccessibilityService() {
             return null
         }
 
+        /** Like [find], but tries labels in priority order ("Storage & cache" before a bare "Storage"). */
+        fun findOrdered(labels: Set<String>): Hit? {
+            for (l in labels) {
+                val one = setOf(l)
+                for (i in items.indices) if (matches(items[i].label, one)) tappable(i)?.let { return it }
+            }
+            return null
+        }
+
         /** A row whose label starts with one of [prefixes], e.g. "Storage usage" — never a "Clear…" button. */
         fun findStartingWith(prefixes: Set<String>): Hit? {
             for (i in items.indices) {
@@ -331,6 +349,24 @@ class SweepService : AccessibilityService() {
             }
             return null
         }
+
+        /** A button mentioning cache next to a "clear"-type word — never one that clears storage or data. */
+        fun findCacheLike(): Hit? {
+            for (i in items.indices) {
+                val l = items[i].label
+                if (l.length > 40 || !l.contains("cache")) continue
+                if (!text.clearWords.any { l.contains(it) }) continue
+                if (matches(l, text.forbidden) || l.contains("storage") || l.contains("data")) continue
+                tappable(i)?.let { return it }
+            }
+            return null
+        }
+
+        /** Short list of what's on screen, for the sweep log when something can't be found. */
+        fun describe(): String = items.asSequence()
+            .map { it.label }.filter { it.isNotBlank() }.distinct().take(30)
+            .joinToString(" | ") { it.take(28) } +
+            " [pkgs ${packages.joinToString()}]"
 
         /** A confirm button in a window that appeared after [before] (i.e. a fresh dialog). */
         fun findDialogButton(before: Set<Int>, labels: Set<String>, exclude: Hit): Hit? {

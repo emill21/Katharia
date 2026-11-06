@@ -152,6 +152,15 @@ fun HomeScreen(onReplayTour: () -> Unit = {}) {
     var showLooks by remember { mutableStateOf(false) }
     var lifetime by remember { mutableStateOf(prefs.lifetime) }
     var burst by remember { mutableIntStateOf(0) }
+    val releases = remember { com.katharia.app.Changelog.load(ctx) }
+    // "What's new" once after each update (not on a fresh install).
+    var showWhatsNew by remember {
+        mutableStateOf(prefs.lastSeenVersion < com.katharia.app.BuildConfig.VERSION_CODE && (prefs.lastSeenVersion > 0 || prefs.lifetime.sweeps > 0))
+    }
+    var showChangelog by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!showWhatsNew) prefs.lastSeenVersion = com.katharia.app.BuildConfig.VERSION_CODE
+    }
 
     val state by Sweep.state.collectAsStateWithLifecycle()
 
@@ -365,12 +374,23 @@ fun HomeScreen(onReplayTour: () -> Unit = {}) {
         )
     }
 
+    if (showWhatsNew && releases.isNotEmpty()) {
+        ChangelogSheet(releases, latestOnly = true) {
+            prefs.lastSeenVersion = com.katharia.app.BuildConfig.VERSION_CODE
+            showWhatsNew = false
+        }
+    }
+    if (showChangelog) {
+        ChangelogSheet(releases, latestOnly = false) { showChangelog = false }
+    }
+
     if (showLooks) {
         ModalBottomSheet(onDismissRequest = { showLooks = false }) {
             AppearanceSheet(
                 look = look,
                 lifetime = lifetime,
                 onReplayTour = { showLooks = false; onReplayTour() },
+                onChangelog = { showLooks = false; showChangelog = true },
             ) { Look.update(ctx, it) }
         }
     }
@@ -743,6 +763,7 @@ private fun AppearanceSheet(
     look: com.katharia.app.Appearance,
     lifetime: Lifetime,
     onReplayTour: () -> Unit,
+    onChangelog: () -> Unit,
     onChange: (com.katharia.app.Appearance) -> Unit,
 ) {
     val ctx = LocalContext.current
@@ -783,6 +804,11 @@ private fun AppearanceSheet(
             Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
             Text("Replay welcome tour")
+        }
+        TextButton(onClick = onChangelog, modifier = Modifier.padding(start = 12.dp)) {
+            Icon(Icons.Rounded.ListAlt, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Changelog · v${com.katharia.app.BuildConfig.VERSION_NAME}")
         }
     }
 }
