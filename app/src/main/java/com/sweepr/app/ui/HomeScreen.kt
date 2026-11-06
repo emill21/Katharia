@@ -46,6 +46,10 @@ import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.ListAlt
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Search
@@ -580,8 +584,16 @@ private fun ResultBody(s: SweepState.Finished) {
         },
         container = colors.surfaceContainerLowest.copy(alpha = 0.6f),
     )
+    var showLog by remember { mutableStateOf(false) }
+    Spacer(Modifier.height(6.dp))
+    TextButton(onClick = { showLog = true }) {
+        Icon(Icons.Rounded.ListAlt, null, Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text("Sweep log")
+    }
+    if (showLog) SweepLogSheet(s) { showLog = false }
     if (s.problems.isNotEmpty()) {
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.Top) {
             Icon(Icons.Rounded.ErrorOutline, null, tint = colors.error, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
@@ -591,6 +603,61 @@ private fun ResultBody(s: SweepState.Finished) {
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/** Per-app timings and what happened, with a copy button so it can be shared for troubleshooting. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SweepLogSheet(s: SweepState.Finished, onDismiss: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val clipboard = LocalClipboardManager.current
+    val ctx = LocalContext.current
+    val text = remember(s) {
+        buildString {
+            appendLine("Sweepr log · ${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}")
+            appendLine("Mode ${s.mode.label} · ${s.outcomes.size} apps · ${formatElapsed(s.elapsedMs)}")
+            s.outcomes.forEach { o ->
+                appendLine("${o.target.label}: ${o.ms}ms · stop=${o.stop} cache=${o.cache} · ${o.note}")
+            }
+        }
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(bottom = 24.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Sweep log", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+                FilledTonalButton(onClick = {
+                    clipboard.setText(AnnotatedString(text))
+                    android.widget.Toast.makeText(ctx, "Log copied", android.widget.Toast.LENGTH_SHORT).show()
+                }) {
+                    Icon(Icons.Rounded.ContentCopy, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Copy")
+                }
+            }
+            Text(
+                "${formatElapsed(s.elapsedMs)} total · slowest first",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+            )
+            LazyColumn(Modifier.fillMaxWidth()) {
+                itemsIndexed(s.outcomes.sortedByDescending { it.ms }) { _, o ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(o.target.label, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(o.note.ifEmpty { "—" }, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            if (o.ms < 1000) "${o.ms} ms" else String.format(java.util.Locale.US, "%.1f s", o.ms / 1000f),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (o.ms > 3000) colors.error else colors.onSurface,
+                        )
+                    }
+                }
+            }
         }
     }
 }

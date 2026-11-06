@@ -76,7 +76,6 @@ class SweepService : AccessibilityService() {
         val list = targets.filter { it.packageName != packageName && it.packageName != SettingsText.SETTINGS }
         job = scope.launch {
             val outcomes = mutableListOf<AppOutcome>()
-            var before: Long? = null
             var cancelled = false
             val started = System.currentTimeMillis()
             try {
@@ -89,11 +88,10 @@ class SweepService : AccessibilityService() {
                     }
                     delay(350)
                 }
-                Sweep.set(SweepState.Running(mode, 0, list.size, list.firstOrNull()?.label ?: ""))
-                before = if (mode.clearCache) withContext(Dispatchers.IO) { AppRepo.totalCache(this@SweepService, list) } else null
+                // Start straight away: cache is measured per app as we go, not all up front.
                 showOverlay()
                 list.forEachIndexed { i, t ->
-                    Sweep.set(SweepState.Running(mode, i, list.size, t.label, outcomes.takeLast(4).reversed(), before))
+                    Sweep.set(SweepState.Running(mode, i, list.size, t.label, outcomes.takeLast(4).reversed()))
                     overlayText?.text = "Sweeping ${i + 1} of ${list.size}\n${t.label}"
                     outcomes += sweepOne(t, mode)
                 }
@@ -102,8 +100,14 @@ class SweepService : AccessibilityService() {
             } finally {
                 withContext(NonCancellable) {
                     hideOverlay()
-                    val after = if (before != null) withContext(Dispatchers.IO) { AppRepo.totalCache(this@SweepService, list) } else null
-                    val freed = if (before != null && after != null) (before - after).coerceAtLeast(0) else null
+                    // Freed = cache before minus cache now, for the apps we actually cleared.
+                    val cleared = outcomes.filter { it.cache == StepResult.Done && it.cacheBefore != null }
+                    val freed = if (!mode.clearCache || !AppRepo.hasUsageAccess(this@SweepService)) null
+                    else withContext(Dispatchers.IO) {
+                        cleared.sumOf { o ->
+                            (o.cacheBefore!! - (AppRepo.cacheOf(this@SweepService, o.target.packageName) ?: o.cacheBefore)).coerceAtLeast(0)
+                        }
+                    }
                     val done = SweepState.Finished(mode, outcomes.toList(), cancelled, freed, System.currentTimeMillis() - started)
                     Prefs(this@SweepService).record(done)
                     Sweep.set(done)
@@ -132,6 +136,10 @@ class SweepService : AccessibilityService() {
     }
 
     private suspend fun sweepOne(t: Target, mode: SweepMode): AppOutcome {
+        val t0 = System.currentTimeMillis()
+        val trace = StringBuilder()
+        fun mark(what: String) { trace.append(what).append(' ').append(System.currentTimeMillis() - t0).append("ms · ") }
+
         // Skip Settings entirely when we already know there's nothing to do — the biggest speed win.
         val wantStop = mode.forceStop && !t.protect
         val (needStop, cacheNow) = withContext(Dispatchers.IO) {
@@ -139,34 +147,61 @@ class SweepService : AccessibilityService() {
                 (if (mode.clearCache) AppRepo.cacheOf(this@SweepService, t.packageName) else null)
         }
         val needCache = mode.clearCache && (cacheNow == null || cacheNow >= MIN_CACHE_BYTES)
+        fun done(stop: StepResult, cache: StepResult) =
+            AppOutcome(t, stop, cache, cacheNow, System.currentTimeMillis() - t0, trace.toString().trimEnd(' ', '·'))
         if (!needStop && !needCache) {
-            return AppOutcome(
-                t,
+            mark("skipped")
+            return done(
                 if (wantStop) StepResult.AlreadyClean else StepResult.Skipped,
                 if (mode.clearCache) StepResult.AlreadyClean else StepResult.Skipped,
             )
         }
 
+        // The page we're leaving. A new App info page is a new window, so we can tell the moment it's up
+        // without relying on the app's name being shown exactly as we have it.
+        val oldWindow = currentWindowIds()
         while (changed.tryReceive().isSuccess) Unit
-        openAppInfo(t.packageName)
-        // Wait for *this* app's page (its name is in the header) so we never act on the previous one.
-        val ready = poll(5000) {
-            if (!anyRootHasText(t.label)) null
-            else findTappable(text.forceStop) ?: findTappable(text.storage) ?: findTappable(text.clearCache)
-        } ?: poll(1500) { findTappable(text.forceStop) ?: findTappable(text.storage) }
-        if (ready == null) return AppOutcome(t, notFoundIf(needStop), notFoundIf(needCache))
+        openAppInfo(t.packageName, clearTask = false)
+        var ready = poll(1800) { pageReady(oldWindow, t.label) }
+        if (ready == null) {
+            // This Settings build didn't swap the page in place; fall back to a full relaunch.
+            mark("relaunch")
+            val old2 = currentWindowIds()
+            openAppInfo(t.packageName, clearTask = true)
+            ready = poll(3500) { pageReady(old2, t.label) }
+        }
+        if (ready == null) {
+            mark("page never loaded")
+            return done(notFoundIf(needStop), notFoundIf(needCache))
+        }
+        mark("page")
 
         val stop = when {
-            needStop -> tapForceStop()
+            needStop -> tapForceStop().also { mark("stop:$it") }
             wantStop -> StepResult.AlreadyClean
             else -> StepResult.Skipped
         }
         val cache = when {
-            needCache -> tapClearCache(knownCache = cacheNow)
+            needCache -> tapClearCache(knownCache = cacheNow).also { mark("cache:$it") }
             mode.clearCache -> StepResult.AlreadyClean
             else -> StepResult.Skipped
         }
-        return AppOutcome(t, stop, cache)
+        return done(stop, cache)
+    }
+
+    private fun currentWindowIds(): Set<Int> =
+        roots().map { it.windowId }.toSet()
+
+    /** A button from the *new* App info page: either in a window that wasn't there before, or on a page showing the app's name. */
+    private fun pageReady(oldWindows: Set<Int>, label: String): AccessibilityNodeInfo? {
+        val all = roots()
+        val fresh = all.filter { it.windowId !in oldWindows }
+        val pool = when {
+            fresh.isNotEmpty() -> fresh
+            all.any { r -> r.findAccessibilityNodeInfosByText(label).orEmpty().any { it.isVisibleToUser } } -> all
+            else -> return null
+        }
+        return findTappable(text.forceStop, pool) ?: findTappable(text.storage, pool) ?: findTappable(text.clearCache, pool)
     }
 
     private fun notFoundIf(b: Boolean) = if (b) StepResult.NotFound else StepResult.Skipped
@@ -206,10 +241,13 @@ class SweepService : AccessibilityService() {
         return StepResult.Done
     }
 
-    private fun openAppInfo(pkg: String) {
+    private fun openAppInfo(pkg: String, clearTask: Boolean) {
         val i = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", pkg, null))
             .addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or
+                // CLEAR_TOP swaps the App info page in place inside Settings' own task. (CLEAR_TASK tore the
+                // whole task down each time, flashing Sweepr's screen underneath between apps.)
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    (if (clearTask) Intent.FLAG_ACTIVITY_CLEAR_TASK else Intent.FLAG_ACTIVITY_CLEAR_TOP) or
                     Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
             )
         runCatching { startActivity(i) }
@@ -239,8 +277,8 @@ class SweepService : AccessibilityService() {
         roots().any { r -> r.findAccessibilityNodeInfosByText(s).orEmpty().any { it.isVisibleToUser } }
 
     /** Finds a visible element whose whole label is one of [labels], and returns the thing to tap on. */
-    private fun findTappable(labels: Set<String>): AccessibilityNodeInfo? {
-        for (root in roots()) {
+    private fun findTappable(labels: Set<String>, pool: List<AccessibilityNodeInfo> = roots()): AccessibilityNodeInfo? {
+        for (root in pool) {
             val hit = findExact(root, labels) ?: continue
             return tappableFor(hit)
         }

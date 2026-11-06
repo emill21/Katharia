@@ -21,6 +21,11 @@ data class AppOutcome(
     val target: Target,
     val stop: StepResult,
     val cache: StepResult,
+    /** Cache measured just before this app was swept (needs usage access). */
+    val cacheBefore: Long? = null,
+    /** Time spent on this app and a short trace of what happened, for the sweep log. */
+    val ms: Long = 0,
+    val note: String = "",
 )
 
 sealed interface SweepState {
