@@ -42,6 +42,7 @@ sealed interface SweepState {
         val outcomes: List<AppOutcome>,
         val cancelled: Boolean,
         val freedBytes: Long?,
+        val elapsedMs: Long = 0,
     ) : SweepState {
         val stopped get() = outcomes.count { it.stop == StepResult.Done }
         val cleared get() = outcomes.count { it.cache == StepResult.Done }

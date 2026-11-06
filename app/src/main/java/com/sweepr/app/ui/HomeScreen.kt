@@ -337,7 +337,8 @@ fun HomeScreen() {
             title = { Text("Sweep ${selected.size} apps?") },
             text = {
                 Text(
-                    "Your screen will flip through Settings for each app, about 1–3 seconds each. " +
+                    "Your screen will flip through Settings for each app that needs it, about a second each. " +
+                        "Apps that are already stopped or have no cache are skipped instantly. " +
                         "Hands off until it's done; tap Stop on the banner to cancel." +
                         if (guarded > 0 && mode.forceStop) "\n\n$guarded protected apps (keyboard, launcher…) get their cache cleared but won't be force-stopped." else ""
                 )
@@ -564,7 +565,7 @@ private fun ResultBody(s: SweepState.Finished) {
         style = MaterialTheme.typography.headlineSmall,
     )
     Text(
-        "${s.outcomes.size} apps checked" + if (skipped > 0) " · $skipped already clean" else "",
+        "${s.outcomes.size} apps in ${formatElapsed(s.elapsedMs)}" + if (skipped > 0) " · $skipped already clean" else "",
         style = MaterialTheme.typography.bodyMedium,
         color = colors.onSurfaceVariant,
     )
@@ -592,6 +593,11 @@ private fun ResultBody(s: SweepState.Finished) {
             )
         }
     }
+}
+
+private fun formatElapsed(ms: Long): String {
+    val sec = (ms / 1000).coerceAtLeast(1)
+    return if (sec < 60) "${sec}s" else "${sec / 60}m ${sec % 60}s"
 }
 
 @Composable

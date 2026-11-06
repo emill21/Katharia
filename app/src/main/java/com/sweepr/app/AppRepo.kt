@@ -56,6 +56,16 @@ object AppRepo {
         ssm.queryStatsForPackage(StorageManager.UUID_DEFAULT, info.packageName, Process.myUserHandle()).cacheBytes
     }.getOrNull()
 
+    fun cacheOf(context: Context, pkg: String): Long? {
+        if (!hasUsageAccess(context)) return null
+        return runCatching { cacheOf(context, context.packageManager.getApplicationInfo(pkg, 0)) }.getOrNull()
+    }
+
+    /** True if the app is already force-stopped (and hasn't been opened since), like Settings checks. */
+    fun isStopped(context: Context, pkg: String): Boolean = runCatching {
+        context.packageManager.getApplicationInfo(pkg, 0).flags and ApplicationInfo.FLAG_STOPPED != 0
+    }.getOrDefault(false)
+
     fun totalCache(context: Context, targets: List<Target>): Long? {
         if (!hasUsageAccess(context)) return null
         val pm = context.packageManager

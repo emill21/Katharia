@@ -20,6 +20,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -45,7 +47,12 @@ class SweepService : AccessibilityService() {
         instance = this
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit // we poll instead
+    /** Pinged on every screen change while sweeping, so waits end the instant Settings updates. */
+    private val changed = Channel<Unit>(Channel.CONFLATED)
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (job?.isActive == true) changed.trySend(Unit)
+    }
     override fun onInterrupt() = Unit
 
     override fun onUnbind(intent: Intent?): Boolean {
@@ -71,6 +78,7 @@ class SweepService : AccessibilityService() {
             val outcomes = mutableListOf<AppOutcome>()
             var before: Long? = null
             var cancelled = false
+            val started = System.currentTimeMillis()
             try {
                 if (fromShade) {
                     // Started from the Quick Settings tile: get the shade out of the way first.
@@ -96,7 +104,7 @@ class SweepService : AccessibilityService() {
                     hideOverlay()
                     val after = if (before != null) withContext(Dispatchers.IO) { AppRepo.totalCache(this@SweepService, list) } else null
                     val freed = if (before != null && after != null) (before - after).coerceAtLeast(0) else null
-                    val done = SweepState.Finished(mode, outcomes.toList(), cancelled, freed)
+                    val done = SweepState.Finished(mode, outcomes.toList(), cancelled, freed, System.currentTimeMillis() - started)
                     Prefs(this@SweepService).record(done)
                     Sweep.set(done)
                     backToApp()
@@ -124,14 +132,40 @@ class SweepService : AccessibilityService() {
     }
 
     private suspend fun sweepOne(t: Target, mode: SweepMode): AppOutcome {
-        openAppInfo(t.packageName)
-        // Wait for this app's page (its name shows in the header) so we never act on the previous one.
-        poll(3500) { if (anyRootHasText(t.label)) true else null }
-        val ready = poll(4000) { findTappable(text.forceStop) ?: findTappable(text.storage) }
-        if (ready == null) return AppOutcome(t, notFoundIf(mode.forceStop), notFoundIf(mode.clearCache))
+        // Skip Settings entirely when we already know there's nothing to do — the biggest speed win.
+        val wantStop = mode.forceStop && !t.protect
+        val (needStop, cacheNow) = withContext(Dispatchers.IO) {
+            (wantStop && !AppRepo.isStopped(this@SweepService, t.packageName)) to
+                (if (mode.clearCache) AppRepo.cacheOf(this@SweepService, t.packageName) else null)
+        }
+        val needCache = mode.clearCache && (cacheNow == null || cacheNow >= MIN_CACHE_BYTES)
+        if (!needStop && !needCache) {
+            return AppOutcome(
+                t,
+                if (wantStop) StepResult.AlreadyClean else StepResult.Skipped,
+                if (mode.clearCache) StepResult.AlreadyClean else StepResult.Skipped,
+            )
+        }
 
-        val stop = if (mode.forceStop && !t.protect) tapForceStop() else StepResult.Skipped
-        val cache = if (mode.clearCache) tapClearCache() else StepResult.Skipped
+        while (changed.tryReceive().isSuccess) Unit
+        openAppInfo(t.packageName)
+        // Wait for *this* app's page (its name is in the header) so we never act on the previous one.
+        val ready = poll(5000) {
+            if (!anyRootHasText(t.label)) null
+            else findTappable(text.forceStop) ?: findTappable(text.storage) ?: findTappable(text.clearCache)
+        } ?: poll(1500) { findTappable(text.forceStop) ?: findTappable(text.storage) }
+        if (ready == null) return AppOutcome(t, notFoundIf(needStop), notFoundIf(needCache))
+
+        val stop = when {
+            needStop -> tapForceStop()
+            wantStop -> StepResult.AlreadyClean
+            else -> StepResult.Skipped
+        }
+        val cache = when {
+            needCache -> tapClearCache(knownCache = cacheNow)
+            mode.clearCache -> StepResult.AlreadyClean
+            else -> StepResult.Skipped
+        }
         return AppOutcome(t, stop, cache)
     }
 
@@ -145,7 +179,8 @@ class SweepService : AccessibilityService() {
         val ok = poll(2500) { findConfirm(exclude = btn) }
         if (ok != null) {
             ok.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            delay(250)
+            // Move on the moment the dialog is gone instead of a fixed pause.
+            poll(800) { if (roots().none { r -> r.findAccessibilityNodeInfosByViewId("android:id/button1").orEmpty().any { it.isVisibleToUser } }) true else null }
             return StepResult.Done
         }
         // Some skins stop the app straight away with no dialog; the button greys out.
@@ -153,7 +188,7 @@ class SweepService : AccessibilityService() {
         return if (greyed != null) StepResult.Done else StepResult.NotFound
     }
 
-    private suspend fun tapClearCache(): StepResult {
+    private suspend fun tapClearCache(knownCache: Long?): StepResult {
         var clear = findTappable(text.clearCache) // a few skins show it right on App info
         if (clear == null) {
             val storage = findWithScroll(text.storage) ?: return StepResult.NotFound
@@ -161,12 +196,13 @@ class SweepService : AccessibilityService() {
             clear = poll(4500) { findTappable(text.clearCache) } ?: return StepResult.NotFound
         }
         // Settings greys the button out until it has measured the cache; give it a moment.
+        // If we know there's cache, wait longer for it to light up; if we don't, give up sooner.
         if (!clear.isEnabled) {
-            clear = poll(1500) { findTappable(text.clearCache)?.takeIf { it.isEnabled } }
+            clear = poll(if (knownCache != null) 2500 else 1000) { findTappable(text.clearCache)?.takeIf { it.isEnabled } }
                 ?: return StepResult.AlreadyClean
         }
-        clear.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        delay(300)
+        clear.performAction(AccessibilityNodeInfo.ACTION_CLICK) // returns once Settings has handled the tap
+        delay(40)
         return StepResult.Done
     }
 
@@ -195,8 +231,8 @@ class SweepService : AccessibilityService() {
         val list = mutableListOf<AccessibilityNodeInfo>()
         rootInActiveWindow?.let { list += it }
         runCatching { windows }.getOrNull()?.forEach { w -> w.root?.let { if (it != list.firstOrNull()) list += it } }
-        // Ignore our own overlay.
-        return list.filter { it.packageName?.toString() != packageName }
+        // Ignore our own overlay and the status/navigation bars.
+        return list.filter { val p = it.packageName?.toString(); p != packageName && p != "com.android.systemui" }
     }
 
     private fun anyRootHasText(s: String): Boolean =
@@ -205,8 +241,18 @@ class SweepService : AccessibilityService() {
     /** Finds a visible element whose whole label is one of [labels], and returns the thing to tap on. */
     private fun findTappable(labels: Set<String>): AccessibilityNodeInfo? {
         for (root in roots()) {
-            val hit = bfs(root) { n -> n.isVisibleToUser && n.label() in labels } ?: continue
+            val hit = findExact(root, labels) ?: continue
             return tappableFor(hit)
+        }
+        return null
+    }
+
+    /** One search per label, done inside the Settings process — far faster than walking every node. */
+    private fun findExact(root: AccessibilityNodeInfo, labels: Set<String>): AccessibilityNodeInfo? {
+        for (l in labels) {
+            root.findAccessibilityNodeInfosByText(l).orEmpty()
+                .firstOrNull { it.isVisibleToUser && it.label() in labels }
+                ?.let { return it }
         }
         return null
     }
@@ -218,9 +264,13 @@ class SweepService : AccessibilityService() {
                 ?.let { return it }
         }
         for (root in roots()) {
-            val hit = bfs(root) { n -> n.isVisibleToUser && n.label() in text.confirm } ?: continue
-            val t = tappableFor(hit) ?: continue
-            if (t != exclude && t.isEnabled) return t
+            for (l in text.confirm) {
+                for (hit in root.findAccessibilityNodeInfosByText(l).orEmpty()) {
+                    if (!hit.isVisibleToUser || hit.label() !in text.confirm) continue
+                    val t = tappableFor(hit) ?: continue
+                    if (t != exclude && t.isEnabled) return t
+                }
+            }
         }
         return null
     }
@@ -238,7 +288,7 @@ class SweepService : AccessibilityService() {
     }
 
     private fun subtreeHasForbidden(node: AccessibilityNodeInfo): Boolean =
-        bfs(node, limit = 60) { it.label() in text.forbidden } != null
+        text.forbidden.any { f -> node.findAccessibilityNodeInfosByText(f).orEmpty().any { it.label() in text.forbidden } }
 
     private suspend fun findWithScroll(labels: Set<String>): AccessibilityNodeInfo? {
         repeat(6) {
@@ -246,7 +296,7 @@ class SweepService : AccessibilityService() {
             val scroller = roots().firstNotNullOfOrNull { r -> bfs(r) { it.isScrollable && it.isVisibleToUser } }
                 ?: return poll(1500) { findTappable(labels) }
             scroller.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
-            delay(350)
+            poll(300) { findTappable(labels) }?.let { return it }
         }
         return findTappable(labels)
     }
@@ -271,12 +321,14 @@ class SweepService : AccessibilityService() {
         return null
     }
 
+    /** Re-checks [block] whenever the screen changes (or every 120 ms) until it returns something. */
     private suspend fun <T> poll(timeoutMs: Long, block: () -> T?): T? {
         val end = System.currentTimeMillis() + timeoutMs
         while (true) {
             runCatching(block).getOrNull()?.let { return it }
-            if (System.currentTimeMillis() > end) return null
-            delay(100)
+            val left = end - System.currentTimeMillis()
+            if (left <= 0) return null
+            withTimeoutOrNull(minOf(left, 120L)) { changed.receive() }
         }
     }
 
@@ -344,6 +396,9 @@ class SweepService : AccessibilityService() {
     }
 
     companion object {
+        /** Caches smaller than this aren't worth a trip to Settings; they refill instantly anyway. */
+        const val MIN_CACHE_BYTES = 64L * 1024
+
         @Volatile
         var instance: SweepService? = null
             private set
