@@ -1,8 +1,15 @@
 # Changelog
 
-## 3.3 · Cache clearing on Pixel (2026-11-06)
+## 3.4 · Clear cache on Android 17 (2026-11-06)
 
-- Fixed Clear cache not being found on Pixel phones running Android 16 and 17
+- Android 17 moved the Clear cache button below the size breakdown, off the bottom of the screen. Katharia now scrolls it into view (or scrolls the page) before tapping
+- Waits for the storage page itself instead of guessing, so it no longer re-taps or times out
+- Checks the Cache size before and after, and the sweep log shows it (for example "cache 173 MB → 0 B")
+- The sweep log now marks off-screen items and lists scrollable areas, for faster troubleshooting
+
+## 3.3 · Smarter cache button search (2026-11-06)
+
+- Better at finding Clear cache on Pixel phones running Android 16 and 17
 - Katharia now picks the exact "Storage & cache" row first, taps it again if the page was still loading, and recognises differently worded Clear cache buttons
 - If something still can't be found, the sweep log now lists what was on screen so it can be fixed quickly
 - New: this changelog. You'll see what's new after each update, and the full history is in the palette menu

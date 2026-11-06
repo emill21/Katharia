@@ -15,6 +15,8 @@ class SettingsText(context: Context) {
     val storagePrefix: Set<String>
     /** The "clear" verb on its own ("clear"), for buttons worded slightly differently. */
     val clearWords: Set<String>
+    /** The "Cache" row title on an app's storage page. */
+    val cacheRow: Set<String>
     val cacheConfirm: Set<String>
     /** Xiaomi's App info has no Storage row: "Clear data" opens a menu with "Clear cache" in it. */
     val miuiClearData: Set<String>
@@ -48,6 +50,7 @@ class SettingsText(context: Context) {
         miuiClearData = norm(listOf("Clear data", "Clear storage"))
         clearCache = norm(s("clear_cache_btn_text") + listOf("Clear cache", "Clear Cache"))
         clearWords = (clearCache.map { it.substringBefore(' ') } + listOf("clear", "delete", "empty")).filter { it.length >= 3 }.toSet()
+        cacheRow = norm(s("cache_header_label", "cache_size_text") + listOf("Cache", "Cached data"))
         forbidden = norm(
             s("clear_user_data_text", "clear_storage_btn_text", "uninstall_text", "disable_text") +
                 listOf("Clear storage", "Clear data", "Clear all data", "Uninstall", "Disable", "Manage storage")
