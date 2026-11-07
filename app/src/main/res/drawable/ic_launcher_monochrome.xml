@@ -1,6 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Single-colour version for Android 13+ themed icons. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#FF000000" android:pathData="M54,26 C56.6,43.5 64.5,51.4 82,54 C64.5,56.6 56.6,64.5 54,82 C51.4,64.5 43.5,56.6 26,54 C43.5,51.4 51.4,43.5 54,26 Z" />
-    <path android:fillColor="#FF000000" android:pathData="M75,28 C76,34 78,36 84,37 C78,38 76,40 75,46 C74,40 72,38 66,37 C72,36 74,34 75,28 Z" />
+    <path android:pathData="M69.50,27.15 A31,31 0,1 1,27.15,38.50" android:strokeColor="#FF000000" android:strokeWidth="3.6" android:strokeLineCap="round" />
+    <path android:pathData="M23.75,38.50a3.4,3.4 0,1 0,6.8 0a3.4,3.4 0,1 0,-6.8 0z" android:fillColor="#FF000000" />
+    <path android:pathData="M28,54a26,26 0,1 0,52 0a26,26 0,1 0,-52 0z" android:strokeColor="#FF000000" android:strokeWidth="2" />
+    <!-- Phone with its sparkle and notch knocked out -->
+    <path android:fillType="evenOdd" android:pathData="M48,36h12a5,5 0 0 1 5,5v26a5,5 0 0 1 -5,5h-12a5,5 0 0 1 -5,-5v-26a5,5 0 0 1 5,-5z M54,47 C54.80,52.60 56.40,54.20 62,55 C56.40,55.80 54.80,57.40 54,63 C53.20,57.40 51.60,55.80 46,55 C51.60,54.20 53.20,52.60 54,47Z M51,39.5h6a1.2,1.2 0 0 1 0,2.4h-6a1.2,1.2 0 0 1 0,-2.4z" android:fillColor="#FF000000" />
 </vector>

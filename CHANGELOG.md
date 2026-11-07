@@ -1,5 +1,10 @@
 # Changelog
 
+## 4.1 · A new icon (2026-11-07)
+
+- New Aqua phone icon in Bataria's Liquid Orb style: a sweeping comet ring around a glass orb, with a sparkling phone inside
+- Matching themed icon, splash screen, Quick Settings tile and Sweep now shortcut
+
 ## 4.0 · A whole new Katharia (2026-11-07)
 
 - Four tabs, like Bataria: Sweep, Apps, Insights and Settings, with the floating pill navigation

@@ -1,5 +1,14 @@
 [
   {
+    "version": "4.1",
+    "date": "2026-11-07",
+    "title": "A new icon",
+    "items": [
+      "New Aqua phone icon in Bataria's Liquid Orb style: a sweeping comet ring around a glass orb, with a sparkling phone inside",
+      "Matching themed icon, splash screen, Quick Settings tile and Sweep now shortcut"
+    ]
+  },
+  {
     "version": "4.0",
     "date": "2026-11-07",
     "title": "A whole new Katharia",

@@ -1,7 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="48dp" android:height="48dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#DCEFD8" android:pathData="M54,0 A54,54 0 1,1 53.99,0 Z" />
-    <path android:fillColor="#1E5631" android:pathData="M54,26 C56.6,43.5 64.5,51.4 82,54 C64.5,56.6 56.6,64.5 54,82 C51.4,64.5 43.5,56.6 26,54 C43.5,51.4 51.4,43.5 54,26 Z" />
-    <path android:fillColor="#3F8F55" android:pathData="M75,28 C76,34 78,36 84,37 C78,38 76,40 75,46 C74,40 72,38 66,37 C72,36 74,34 75,28 Z" />
+    <path android:pathData="M0,54a54,54 0,1 0,108 0a54,54 0,1 0,-108 0z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="0" android:startY="0" android:endX="108" android:endY="108"
+                android:startColor="#FF136B6E" android:endColor="#FF073A3D" />
+        </aapt:attr>
+    </path>
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="1.3" android:scaleY="1.3">
+    <path android:pathData="M23,54a31,31 0,1 0,62 0a31,31 0,1 0,-62 0z" android:strokeColor="#FFA9F0EA" android:strokeAlpha="0.22" android:strokeWidth="3" />
+    <path android:pathData="M69.50,27.15 A31,31 0,0 1,82.86,42.67" android:strokeColor="#FFA9F0EA" android:strokeAlpha="0.19" android:strokeWidth="3.6" android:strokeLineCap="round" />
+    <path android:pathData="M82.86,42.67 A31,31 0,0 1,83.62,63.14" android:strokeColor="#FFA9F0EA" android:strokeAlpha="0.26" android:strokeWidth="3.6" android:strokeLineCap="round" />
+    <path android:pathData="M83.62,63.14 A31,31 0,0 1,71.46,79.61" android:strokeColor="#FFA9F0EA" android:strokeAlpha="0.37" android:strokeWidth="3.6" android:strokeLineCap="round" />
+    <path android:pathData="M71.46,79.61 A31,31 0,0 1,51.68,84.91" android:strokeColor="#FFA9F0EA" android:strokeAlpha="0.50" android:strokeWidth="3.6" android:strokeLineCap="round" />
+    <path android:pathData="M51.68,84.91 A31,31 0,0 1,32.91,76.72" android:strokeColor="#FFA9F0EA" android:strokeAlpha="0.65" android:strokeWidth="3.6" android:strokeLineCap="round" />
+    <path android:pathData="M32.91,76.72 A31,31 0,0 1,23.35,58.62" android:strokeColor="#FFA9F0EA" android:strokeAlpha="0.81" android:strokeWidth="3.6" android:strokeLineCap="round" />
+    <path android:pathData="M23.35,58.62 A31,31 0,0 1,27.15,38.50" android:strokeColor="#FFA9F0EA" android:strokeAlpha="1.00" android:strokeWidth="3.6" android:strokeLineCap="round" />
+    <path android:pathData="M23.75,38.50a3.4,3.4 0,1 0,6.8 0a3.4,3.4 0,1 0,-6.8 0z" android:fillColor="#FFA9F0EA" />
+    <!-- Glass -->
+    <path android:pathData="M28,54a26,26 0,1 0,52 0a26,26 0,1 0,-52 0z" android:fillColor="#FFFFFFFF" android:fillAlpha="0.08" />
+    <group>
+        <clip-path android:pathData="M28,54a26,26 0,1 0,52 0a26,26 0,1 0,-52 0z" />
+        <!-- Back wave -->
+        <path android:pathData="M16,58 C30,52 40,52 50,57 C60,62 70,62 92,55 V92 H16 Z" android:fillColor="#FFA9F0EA" android:fillAlpha="0.45" />
+        <!-- Front wave -->
+        <path android:pathData="M16,56 C32,62 42,62 54,56 C66,50 76,50 92,57 V92 H16 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:type="linear" android:startX="54" android:startY="50" android:endX="54" android:endY="82"
+                    android:startColor="#FFC9F7F3" android:endColor="#FF6FD3CB" />
+            </aapt:attr>
+        </path>
+        <!-- Bubbles -->
+        <path android:pathData="M43,70a2,2 0,1 0,4 0a2,2 0,1 0,-4 0z M58.6,74a1.4,1.4 0,1 0,2.8 0a1.4,1.4 0,1 0,-2.8 0z"
+            android:fillColor="#FF073A3D" android:fillAlpha="0.25" />
+        <!-- Shine -->
+        <path android:pathData="M28,54a26,26 0,1 0,52 0a26,26 0,1 0,-52 0z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:type="radial" android:centerX="44" android:centerY="44" android:gradientRadius="22"
+                    android:startColor="#38FFFFFF" android:endColor="#00FFFFFF" />
+            </aapt:attr>
+        </path>
+    </group>
+    <!-- Phone with a sparkling screen -->
+    <path android:pathData="M48,36h12a5,5 0 0 1 5,5v26a5,5 0 0 1 -5,5h-12a5,5 0 0 1 -5,-5v-26a5,5 0 0 1 5,-5z" android:fillColor="#FF073A3D" />
+    <path android:pathData="M51,39.5h6a1.2,1.2 0 0 1 0,2.4h-6a1.2,1.2 0 0 1 0,-2.4z" android:fillColor="#FFA9F0EA" />
+    <path android:pathData="M54,47 C54.80,52.60 56.40,54.20 62,55 C56.40,55.80 54.80,57.40 54,63 C53.20,57.40 51.60,55.80 46,55 C51.60,54.20 53.20,52.60 54,47Z" android:fillColor="#FFA9F0EA" />
+    </group>
 </vector>
