@@ -1,10 +1,14 @@
 # Changelog
 
-## 3.6 · Clear cache, actually fixed (2026-11-06)
+## 3.7 · Clear cache on Pixel (2026-11-06)
 
-- Fixed the real cause of "cache not cleared": Katharia only read the first 50 items on each screen, and on Pixel the Clear cache button sits past that
-- Every screen is now read in full, so buttons further down are found on every phone
-- Stops scrolling as soon as the page reaches the bottom, instead of trying eight times
+- Pixel's Settings hides its Clear storage and Clear cache buttons from accessibility apps that don't declare themselves accessibility tools. Katharia now declares this, so it can see and tap Clear cache
+- The sweep log now says when Android is holding controls back, so problems like this show up straight away
+
+## 3.6 · Reading screens in full (2026-11-06)
+
+- Screens are now read element by element instead of in batches
+- Stops scrolling as soon as the page reaches the bottom
 
 ## 3.5 · Safer fallbacks (2026-11-06)
 

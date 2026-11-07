@@ -298,6 +298,8 @@ class SweepService : AccessibilityService() {
         val sc = snap()
         val row = sc.cacheRowTarget()
         if (row == null) {
+            val withheld = sc.items.sumOf { it.withheld }
+            if (withheld > 0) note("Android withheld $withheld controls")
             note("no clear-cache button or tappable cache row; screen: ${sc.describe()}")
             return StepResult.NotFound
         }
@@ -421,7 +423,10 @@ class SweepService : AccessibilityService() {
         val window: Int,
         /** On screen right now. Off-screen items (e.g. buttons below the fold) are kept so we can scroll to them. */
         val visible: Boolean,
-    )
+    ) {
+        /** Children Android reported but wouldn't hand over (e.g. controls marked sensitive). */
+        var withheld: Int = 0
+    }
 
     inner class Hit(val node: AccessibilityNodeInfo, val enabled: Boolean, val visible: Boolean = true) {
         fun click() = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
@@ -495,7 +500,8 @@ class SweepService : AccessibilityService() {
             .filter { it.label.isNotBlank() || it.node.isClickable }
             .map {
                 val name = it.label.take(28).ifEmpty { "∅" + it.node.className?.toString()?.substringAfterLast('.').orEmpty() }
-                (if (it.visible) "" else "~") + name + (if (it.node.isClickable) "*" else "")
+                (if (it.visible) "" else "~") + name + (if (it.node.isClickable) "*" else "") +
+                    (if (it.withheld > 0) "(${it.withheld} withheld)" else "")
             }.distinct().take(45)
             .joinToString(" | ") +
             " [${items.size} nodes, ${scrollers().size} scrollable, pkgs ${packages.joinToString()}]"
@@ -636,8 +642,12 @@ class SweepService : AccessibilityService() {
             while (queue.isNotEmpty() && budget-- > 0) {
                 val (n, parent) = queue.removeFirst()
                 val idx = items.size
-                items += Item(n, n.label(), parent, n.viewIdResourceName, root.windowId, n.isVisibleToUser)
-                for (c in 0 until n.childCount) child(n, c)?.let { queue += it to idx }
+                val item = Item(n, n.label(), parent, n.viewIdResourceName, root.windowId, n.isVisibleToUser)
+                items += item
+                for (c in 0 until n.childCount) {
+                    val ch = child(n, c)
+                    if (ch == null) item.withheld++ else queue += ch to idx
+                }
             }
         }
         return Screen(items, ids, pkgs)
