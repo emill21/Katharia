@@ -41,6 +41,9 @@ fun ChangelogSheet(releases: List<Release>, latestOnly: Boolean, onDismiss: () -
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = colors.surfaceContainerLow.copy(alpha = 1f),
+        // Set explicitly: with Katharia's see-through card colours, Android can't work out the text colour
+        // from the background and falls back to black — unreadable in dark mode.
+        contentColor = colors.onSurface,
     ) {
         LazyColumn(contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 40.dp)) {
             item {

@@ -1,5 +1,18 @@
 [
   {
+    "version": "4.0",
+    "date": "2026-11-07",
+    "title": "A whole new Katharia",
+    "items": [
+      "Four tabs, like Bataria: Sweep, Apps, Insights and Settings, with the floating pill navigation",
+      "Sweep: a big gradient Sweep button in the orb card, clear action cards instead of a cramped switch, and a Biggest caches panel you can tap to include or leave out apps",
+      "Apps: selection summary, filters for Selected, Running and Protected apps, and a size bar on every app",
+      "Insights: space freed all-time, a chart of every sweep, speed per app, recent sweeps and a breakdown of today's cache",
+      "Settings: appearance, a Skip tiny caches switch, live access status, changelog and the welcome tour in one place",
+      "Fixed the What's new sheet showing black text in dark mode"
+    ]
+  },
+  {
     "version": "3.7",
     "date": "2026-11-06",
     "title": "Clear cache on Pixel",

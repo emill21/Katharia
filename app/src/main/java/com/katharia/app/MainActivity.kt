@@ -12,7 +12,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.katharia.app.ui.HomeScreen
+import com.katharia.app.ui.KathariaApp
 import com.katharia.app.ui.OnboardingScreen
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -43,7 +43,7 @@ class MainActivity : ComponentActivity() {
             var onboarded by remember { mutableStateOf(prefs.onboarded) }
             KathariaTheme(dark, look.accent, look.background, look.pureBlack) {
                 AnimatedContent(onboarded, transitionSpec = { fadeIn(tween(400)) togetherWith fadeOut(tween(250)) }, label = "root") { done ->
-                    if (done) HomeScreen(onReplayTour = { onboarded = false })
+                    if (done) KathariaApp(onReplayTour = { onboarded = false })
                     else OnboardingScreen(look) { prefs.onboarded = true; onboarded = true }
                 }
             }

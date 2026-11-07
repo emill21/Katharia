@@ -89,6 +89,7 @@ class SweepService : AccessibilityService() {
                     }
                     delay(350)
                 }
+                skipTiny = Prefs(this@SweepService).skipTiny
                 activeSet = if (mode == SweepMode.Running) withContext(Dispatchers.IO) {
                     AppRepo.recentlyActive(this@SweepService, Prefs(this@SweepService).lastStopSweepAt)
                 } else null
@@ -141,6 +142,7 @@ class SweepService : AccessibilityService() {
 
     /** Apps opened or running something in the foreground recently (for "Close running"). */
     private var activeSet: Set<String>? = null
+    private var skipTiny = true
 
     private suspend fun sweepOne(t: Target, mode: SweepMode): AppOutcome {
         val t0 = System.currentTimeMillis()
@@ -155,7 +157,8 @@ class SweepService : AccessibilityService() {
             (wantStop && !stopped && (mode != SweepMode.Running || active)) to
                 (if (mode.clearCache) AppRepo.cacheOf(this@SweepService, t.packageName) else null)
         }
-        val needCache = mode.clearCache && (cacheNow == null || cacheNow >= MIN_CACHE_BYTES)
+        val minCache = if (skipTiny) MIN_CACHE_BYTES else 1L
+        val needCache = mode.clearCache && (cacheNow == null || cacheNow >= minCache)
         fun done(stop: StepResult, cache: StepResult) =
             AppOutcome(t, stop, cache, cacheNow, System.currentTimeMillis() - t0, trace.toString().trimEnd(' ', '·'))
         if (!needStop && !needCache) {

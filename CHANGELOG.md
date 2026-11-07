@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.0 · A whole new Katharia (2026-11-07)
+
+- Four tabs, like Bataria: Sweep, Apps, Insights and Settings, with the floating pill navigation
+- Sweep: a big gradient Sweep button in the orb card, clear action cards instead of a cramped switch, and a Biggest caches panel you can tap to include or leave out apps
+- Apps: selection summary, filters for Selected, Running and Protected apps, and a size bar on every app
+- Insights: space freed all-time, a chart of every sweep, speed per app, recent sweeps and a breakdown of today's cache
+- Settings: appearance, a Skip tiny caches switch, live access status, changelog and the welcome tour in one place
+- Fixed the What's new sheet showing black text in dark mode
+
 ## 3.7 · Clear cache on Pixel (2026-11-06)
 
 - Pixel's Settings hides its Clear storage and Clear cache buttons from accessibility apps that don't declare themselves accessibility tools. Katharia now declares this, so it can see and tap Clear cache

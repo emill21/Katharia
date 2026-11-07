@@ -20,6 +20,17 @@ data class Appearance(
     }
 }
 
+/** One finished sweep, for the Insights tab. */
+data class SweepRecord(
+    val time: Long,
+    val mode: SweepMode,
+    val apps: Int,
+    val stopped: Int,
+    val cleared: Int,
+    val freedBytes: Long,
+    val ms: Long,
+)
+
 data class Lifetime(val sweeps: Int, val freedBytes: Long, val stopped: Int, val cleared: Int)
 
 /** Small saved settings: selection, mode, sort, looks and all-time stats. */
@@ -41,6 +52,25 @@ class Prefs(context: Context) {
     var lastSeenVersion: Int
         get() = sp.getInt("last_seen_version", 0)
         set(v) = sp.edit().putInt("last_seen_version", v).apply()
+
+    /** Skip caches under 64 KB (they refill instantly). */
+    var skipTiny: Boolean
+        get() = sp.getBoolean("skip_tiny", true)
+        set(v) = sp.edit().putBoolean("skip_tiny", v).apply()
+
+    /** Newest first, up to 60. */
+    val history: List<SweepRecord>
+        get() = runCatching {
+            val arr = org.json.JSONArray(sp.getString("history", "[]"))
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                SweepRecord(
+                    o.getLong("t"),
+                    runCatching { SweepMode.valueOf(o.getString("m")) }.getOrDefault(SweepMode.Both),
+                    o.getInt("a"), o.getInt("s"), o.getInt("c"), o.getLong("f"), o.getLong("ms"),
+                )
+            }
+        }.getOrDefault(emptyList())
 
     var onboarded: Boolean
         get() = sp.getBoolean("onboarded", false)
@@ -75,6 +105,15 @@ class Prefs(context: Context) {
             .putInt("cleared", l.cleared + s.cleared)
             .apply()
         if (s.mode.forceStop && !s.cancelled) sp.edit().putLong("last_stop", System.currentTimeMillis()).apply()
+        if (s.outcomes.isNotEmpty()) {
+            val rec = org.json.JSONObject()
+                .put("t", System.currentTimeMillis()).put("m", s.mode.name).put("a", s.outcomes.size)
+                .put("s", s.stopped).put("c", s.cleared).put("f", s.freedBytes ?: 0L).put("ms", s.elapsedMs)
+            val old = runCatching { org.json.JSONArray(sp.getString("history", "[]")) }.getOrDefault(org.json.JSONArray())
+            val next = org.json.JSONArray().put(rec)
+            for (i in 0 until minOf(old.length(), 59)) next.put(old.get(i))
+            sp.edit().putString("history", next.toString()).apply()
+        }
     }
 }
 

@@ -5,11 +5,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /** What a sweep should do to each app. */
-enum class SweepMode(val forceStop: Boolean, val clearCache: Boolean, val label: String, val blurb: String) {
-    Both(true, true, "Both", "Force stop and clear cache"),
-    CacheOnly(false, true, "Cache", "Clear cache only"),
-    StopOnly(true, false, "Stop", "Force stop every selected app"),
-    Running(true, false, "Running", "Only close apps you've used since the last stop"),
+enum class SweepMode(
+    val forceStop: Boolean,
+    val clearCache: Boolean,
+    val label: String,
+    val title: String,
+    val blurb: String,
+) {
+    Both(true, true, "Both", "Stop + clean", "Force stop and clear cache"),
+    CacheOnly(false, true, "Cache", "Clear cache", "Free up space, leave apps running"),
+    StopOnly(true, false, "Stop", "Force stop", "Close every selected app"),
+    Running(true, false, "Running", "Close running", "Only apps you've used since the last stop"),
 }
 
 /** [protect] = never force-stop (keyboard, launcher, phone…); its cache can still be cleared. */

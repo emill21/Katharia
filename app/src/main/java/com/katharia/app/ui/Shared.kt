@@ -130,276 +130,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.sqrt
 
-private const val FULL_ORB_BYTES = 3L * 1024 * 1024 * 1024 // 3 GB of cache fills the orb
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun HomeScreen(onReplayTour: () -> Unit = {}) {
-    val ctx = LocalContext.current
-    val prefs = remember { Prefs(ctx) }
-    val haptics = LocalHapticFeedback.current
-
-    var serviceOn by remember { mutableStateOf(AppRepo.isServiceEnabled(ctx)) }
-    var usageOn by remember { mutableStateOf(AppRepo.hasUsageAccess(ctx)) }
-    var includeSystem by remember { mutableStateOf(prefs.includeSystem) }
-    var excluded by remember { mutableStateOf(prefs.excluded) }
-    var mode by remember { mutableStateOf(prefs.mode) }
-    var sort by remember { mutableStateOf(prefs.sort) }
-    var query by remember { mutableStateOf("") }
-    var apps by remember { mutableStateOf<List<InstalledApp>?>(null) }
-    var reload by remember { mutableIntStateOf(0) }
-    var confirm by remember { mutableStateOf(false) }
-    var showLooks by remember { mutableStateOf(false) }
-    var lifetime by remember { mutableStateOf(prefs.lifetime) }
-    var burst by remember { mutableIntStateOf(0) }
-    val releases = remember { com.katharia.app.Changelog.load(ctx) }
-    // "What's new" once after each update (not on a fresh install).
-    var showWhatsNew by remember {
-        mutableStateOf(prefs.lastSeenVersion < com.katharia.app.BuildConfig.VERSION_CODE && (prefs.lastSeenVersion > 0 || prefs.lifetime.sweeps > 0))
-    }
-    var showChangelog by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        if (!showWhatsNew) prefs.lastSeenVersion = com.katharia.app.BuildConfig.VERSION_CODE
-    }
-
-    val state by Sweep.state.collectAsStateWithLifecycle()
-
-    LifecycleResumeEffect(Unit) {
-        com.katharia.app.AccessKeeper.ensureEnabled(ctx)
-        serviceOn = AppRepo.isServiceEnabled(ctx)
-        usageOn = AppRepo.hasUsageAccess(ctx)
-        reload++
-        onPauseOrDispose { }
-    }
-    LaunchedEffect(includeSystem, reload) {
-        apps = withContext(Dispatchers.IO) { AppRepo.load(ctx, includeSystem) }
-    }
-    // Celebrate when a sweep lands.
-    LaunchedEffect(state) {
-        val s = state
-        if (s is SweepState.Finished) {
-            lifetime = prefs.lifetime
-            reload++
-            if (!s.cancelled) {
-                burst++
-                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            }
-        }
-    }
-
-    val all = apps.orEmpty()
-    val selected = all.filter { it.packageName !in excluded }
-    val filtered = if (query.isBlank()) all else all.filter {
-        it.label.contains(query, ignoreCase = true) || it.packageName.contains(query, ignoreCase = true)
-    }
-    val shown = when (sort) {
-        SortBy.Cache -> filtered.sortedWith(compareByDescending<InstalledApp> { it.cacheBytes ?: 0 }.thenBy { it.label.lowercase() })
-        SortBy.Name -> filtered.sortedBy { it.label.lowercase() }
-        SortBy.Selected -> filtered.sortedWith(
-            compareBy<InstalledApp> { it.packageName in excluded }.thenByDescending { it.cacheBytes ?: 0 }
-        )
-    }
-    val selectedCache = if (usageOn) selected.sumOf { it.cacheBytes ?: 0L } else null
-    val runningCount = selected.count { it.active && !it.protected }
-    val running = state is SweepState.Running
-    val colors = MaterialTheme.colorScheme
-    val look by Look.state.collectAsStateWithLifecycle()
-
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    Box(Modifier.fillMaxSize().background(colors.surface)) {
-        AnimatedBackground(look.background, Modifier.fillMaxSize())
-        Scaffold(
-            modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-            containerColor = Color.Transparent,
-            contentColor = colors.onSurface,
-            topBar = {
-                LargeTopAppBar(
-                    title = { Text("Katharia", style = MaterialTheme.typography.headlineLarge) },
-                    actions = {
-                        IconButton(onClick = { showLooks = true }) { Icon(Icons.Rounded.Palette, "Appearance") }
-                    },
-                    scrollBehavior = scrollBehavior,
-                    colors = TopAppBarDefaults.largeTopAppBarColors(
-                        containerColor = Color.Transparent,
-                        scrolledContainerColor = colors.surfaceContainer,
-                    ),
-                )
-            },
-            bottomBar = {
-                FloatingSweepBar(
-                    count = selected.size,
-                    label = if (mode == SweepMode.Running) "Close $runningCount running" else null,
-                    cache = if (mode.clearCache) selectedCache else null,
-                    running = running,
-                    enabled = serviceOn && selected.isNotEmpty() && (mode != SweepMode.Running || runningCount > 0),
-                    onSweep = {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        confirm = true
-                    },
-                    onStop = { SweepService.instance?.stop() },
-                )
-            },
-        ) { padding ->
-            LazyColumn(
-                contentPadding = padding.withPage(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                animatedItem(0) {
-                    Hero(
-                        state = state,
-                        count = selected.size,
-                        runningCount = runningCount,
-                        total = all.size,
-                        cache = selectedCache,
-                        mode = mode,
-                        burst = burst,
-                        onMode = {
-                            if (it != mode) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            mode = it; prefs.mode = it
-                        },
-                        onDismiss = { Sweep.dismiss() },
-                    )
-                }
-                if (lifetime.sweeps > 0 && state !is SweepState.Running) animatedItem(1) { LifetimeStrip(lifetime) }
-                if (!serviceOn) animatedItem(1) { ServiceCard(ctx) }
-                if (!usageOn) animatedItem(2) { UsageCard(ctx) }
-                if (serviceOn && lifetime.sweeps == 0) animatedItem(2) { TileTip() }
-
-                animatedItem(3) { SectionHeader("Apps") }
-                animatedItem(3) { SearchField(query) { query = it } }
-                animatedItem(4) {
-                    Row(
-                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        FilterChip(
-                            selected = true,
-                            onClick = {
-                                sort = SortBy.entries[(sort.ordinal + 1) % SortBy.entries.size]; prefs.sort = sort
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            },
-                            label = { Text(sort.label) },
-                            leadingIcon = { Icon(Icons.Rounded.Sort, null, Modifier.size(18.dp)) },
-                            shape = CircleShape,
-                        )
-                        FilterChip(
-                            selected = includeSystem,
-                            onClick = { includeSystem = !includeSystem; prefs.includeSystem = includeSystem },
-                            label = { Text("System apps") },
-                            shape = CircleShape,
-                            colors = FilterChipDefaults.filterChipColors(containerColor = colors.surfaceContainerLow),
-                        )
-                        TextButton(onClick = {
-                            excluded = excluded - shown.map { it.packageName }.toSet(); prefs.excluded = excluded
-                        }) { Text("Select all") }
-                        TextButton(onClick = {
-                            excluded = excluded + shown.map { it.packageName }; prefs.excluded = excluded
-                        }) { Text("None") }
-                    }
-                }
-                if (includeSystem) animatedItem(4) {
-                    Text(
-                        "Force-stopping system apps can briefly drop things like Bluetooth until they restart. " +
-                            "Your keyboard, launcher, phone and SMS apps are always protected.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.error,
-                        modifier = Modifier.padding(horizontal = 8.dp),
-                    )
-                }
-
-                if (apps == null) {
-                    item {
-                        Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
-                        }
-                    }
-                } else if (shown.isEmpty()) {
-                    item {
-                        SectionCard {
-                            Text(
-                                "No apps match “$query”.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = colors.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                            )
-                        }
-                    }
-                }
-                itemsIndexed(shown, key = { _, a -> a.packageName }) { i, app ->
-                    Box(Modifier.animateItem()) {
-                        Entrance(minOf(i + 5, 8)) {
-                            AppRow(
-                                app = app,
-                                showActive = mode == SweepMode.Running,
-                                checked = app.packageName !in excluded,
-                                first = i == 0,
-                                last = i == shown.lastIndex,
-                                onToggle = {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    excluded = if (app.packageName in excluded) excluded - app.packageName else excluded + app.packageName
-                                    prefs.excluded = excluded
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (confirm) {
-        val guarded = selected.count { it.protected }
-        AlertDialog(
-            onDismissRequest = { confirm = false },
-            icon = { Icon(Icons.Rounded.AutoAwesome, null) },
-            title = { Text("Sweep ${selected.size} apps?") },
-            text = {
-                Text(
-                    "Your screen will flip through Settings for each app that needs it, about a second each. " +
-                        "Apps that are already stopped or have no cache are skipped instantly. " +
-                        "Hands off until it's done; tap Stop on the banner to cancel." +
-                        if (guarded > 0 && mode.forceStop) "\n\n$guarded protected apps (keyboard, launcher…) get their cache cleared but won't be force-stopped." else ""
-                )
-            },
-            confirmButton = {
-                Button(onClick = {
-                    confirm = false
-                    val svc = SweepService.instance
-                    if (svc == null) serviceOn = false
-                    else svc.start(selected.map { Target(it.packageName, it.label, it.protected) }, mode)
-                }) { Text("Start") }
-            },
-            dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel") } },
-        )
-    }
-
-    if (showWhatsNew && releases.isNotEmpty()) {
-        ChangelogSheet(releases, latestOnly = true) {
-            prefs.lastSeenVersion = com.katharia.app.BuildConfig.VERSION_CODE
-            showWhatsNew = false
-        }
-    }
-    if (showChangelog) {
-        ChangelogSheet(releases, latestOnly = false) { showChangelog = false }
-    }
-
-    if (showLooks) {
-        ModalBottomSheet(onDismissRequest = { showLooks = false }) {
-            AppearanceSheet(
-                look = look,
-                lifetime = lifetime,
-                onReplayTour = { showLooks = false; onReplayTour() },
-                onChangelog = { showLooks = false; showChangelog = true },
-            ) { Look.update(ctx, it) }
-        }
-    }
-}
+internal const val FULL_ORB_BYTES = 3L * 1024 * 1024 * 1024 // 3 GB of cache fills the orb
 
 // ---------------------------------------------------------------- hero
 
 @Composable
-private fun Hero(
+internal fun Hero(
     state: SweepState,
     count: Int,
     runningCount: Int,
@@ -407,8 +143,9 @@ private fun Hero(
     cache: Long?,
     mode: SweepMode,
     burst: Int,
-    onMode: (SweepMode) -> Unit,
     onDismiss: () -> Unit,
+    onLog: () -> Unit = {},
+    idleBody: @Composable () -> Unit,
 ) {
     val ctx = LocalContext.current
     val colors = MaterialTheme.colorScheme
@@ -485,9 +222,9 @@ private fun Hero(
             ) { s ->
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     when (s) {
-                        SweepState.Idle -> ReadyBody(count, runningCount, total, cache, mode, onMode)
+                        SweepState.Idle -> idleBody()
                         is SweepState.Running -> RunningBody(s)
-                        is SweepState.Finished -> ResultBody(s)
+                        is SweepState.Finished -> ResultBody(s, onLog)
                     }
                 }
             }
@@ -496,13 +233,13 @@ private fun Hero(
 }
 
 @Composable
-private fun OrbLabel(text: String) {
+internal fun OrbLabel(text: String) {
     Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 /** Odometer-style count up from 0 to [bytes]. */
 @Composable
-private fun CountUpBytes(bytes: Long) {
+internal fun CountUpBytes(bytes: Long) {
     val ctx = LocalContext.current
     val anim = remember(bytes) { Animatable(0f) }
     LaunchedEffect(bytes) { anim.animateTo(1f, tween(1400, easing = FastOutSlowInEasing)) }
@@ -513,7 +250,7 @@ private fun CountUpBytes(bytes: Long) {
 }
 
 @Composable
-private fun ReadyBody(count: Int, running: Int, total: Int, cache: Long?, mode: SweepMode, onMode: (SweepMode) -> Unit) {
+internal fun ReadyBody(count: Int, running: Int, total: Int, cache: Long?, mode: SweepMode, onMode: (SweepMode) -> Unit) {
     val ctx = LocalContext.current
     val colors = MaterialTheme.colorScheme
     HeroStatStrip(
@@ -546,7 +283,7 @@ private fun ReadyBody(count: Int, running: Int, total: Int, cache: Long?, mode: 
 }
 
 @Composable
-private fun RunningBody(s: SweepState.Running) {
+internal fun RunningBody(s: SweepState.Running) {
     val colors = MaterialTheme.colorScheme
     Text("Now sweeping", style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
     Text(
@@ -579,7 +316,7 @@ private fun RunningBody(s: SweepState.Running) {
 }
 
 @Composable
-private fun TickerRow(o: AppOutcome) {
+internal fun TickerRow(o: AppOutcome) {
     val colors = MaterialTheme.colorScheme
     val did = o.stop == StepResult.Done || o.cache == StepResult.Done
     val failed = o.stop == StepResult.NotFound || o.cache == StepResult.NotFound
@@ -603,7 +340,7 @@ private fun TickerRow(o: AppOutcome) {
 }
 
 @Composable
-private fun ResultBody(s: SweepState.Finished) {
+internal fun ResultBody(s: SweepState.Finished, onLog: () -> Unit) {
     val ctx = LocalContext.current
     val colors = MaterialTheme.colorScheme
     val skipped = s.outcomes.count { it.stop != StepResult.Done && it.cache != StepResult.Done && it !in s.problems }
@@ -627,14 +364,12 @@ private fun ResultBody(s: SweepState.Finished) {
         },
         container = colors.surfaceContainerLowest.copy(alpha = 0.6f),
     )
-    var showLog by remember { mutableStateOf(false) }
     Spacer(Modifier.height(6.dp))
-    TextButton(onClick = { showLog = true }) {
+    TextButton(onClick = onLog) {
         Icon(Icons.Rounded.ListAlt, null, Modifier.size(18.dp))
         Spacer(Modifier.width(6.dp))
         Text("Sweep log")
     }
-    if (showLog) SweepLogSheet(s) { showLog = false }
     if (s.problems.isNotEmpty()) {
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.Top) {
@@ -653,7 +388,7 @@ private fun ResultBody(s: SweepState.Finished) {
 /** Per-app timings and what happened, with a copy button so it can be shared for troubleshooting. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SweepLogSheet(s: SweepState.Finished, onDismiss: () -> Unit) {
+internal fun SweepLogSheet(s: SweepState.Finished, onDismiss: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val clipboard = LocalClipboardManager.current
     val ctx = LocalContext.current
@@ -666,7 +401,11 @@ private fun SweepLogSheet(s: SweepState.Finished, onDismiss: () -> Unit) {
             }
         }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = colors.surfaceContainerLow.copy(alpha = 1f),
+        contentColor = colors.onSurface,
+    ) {
         Column(Modifier.padding(bottom = 24.dp)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Sweep log", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
@@ -718,13 +457,13 @@ fun PureBlackRow(checked: Boolean, onChange: (Boolean) -> Unit) {
     )
 }
 
-private fun formatElapsed(ms: Long): String {
+internal fun formatElapsed(ms: Long): String {
     val sec = (ms / 1000).coerceAtLeast(1)
     return if (sec < 60) "${sec}s" else "${sec / 60}m ${sec % 60}s"
 }
 
 @Composable
-private fun LifetimeStrip(l: Lifetime) {
+internal fun LifetimeStrip(l: Lifetime) {
     val ctx = LocalContext.current
     val colors = MaterialTheme.colorScheme
     Row(
@@ -741,7 +480,7 @@ private fun LifetimeStrip(l: Lifetime) {
 }
 
 @Composable
-private fun TileTip() {
+internal fun TileTip() {
     val colors = MaterialTheme.colorScheme
     SectionCard(container = colors.surfaceContainerLow) {
         Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -756,67 +495,10 @@ private fun TileTip() {
     }
 }
 
-// ---------------------------------------------------------------- appearance
-
-@Composable
-private fun AppearanceSheet(
-    look: com.katharia.app.Appearance,
-    lifetime: Lifetime,
-    onReplayTour: () -> Unit,
-    onChangelog: () -> Unit,
-    onChange: (com.katharia.app.Appearance) -> Unit,
-) {
-    val ctx = LocalContext.current
-    Column(Modifier.padding(bottom = 32.dp)) {
-        Text(
-            "Appearance",
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-        )
-        SectionHeader("Theme", Modifier.padding(start = 16.dp))
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-            val modes = listOf("system" to "System", "light" to "Light", "dark" to "Dark")
-            modes.forEachIndexed { i, (k, label) ->
-                SegmentedButton(
-                    selected = look.themeMode == k,
-                    onClick = { onChange(look.copy(themeMode = k)) },
-                    shape = SegmentedButtonDefaults.itemShape(index = i, count = modes.size),
-                ) { Text(label) }
-            }
-        }
-        PureBlackRow(look.pureBlack) { onChange(look.copy(pureBlack = it)) }
-        SectionHeader("Accent", Modifier.padding(start = 16.dp, bottom = 8.dp))
-        AccentPicker(selected = look.accent) { onChange(look.copy(accent = it)) }
-        SectionHeader("Background", Modifier.padding(start = 16.dp, bottom = 8.dp))
-        BackgroundPicker(selected = look.background) { onChange(look.copy(background = it)) }
-        if (lifetime.sweeps > 0) {
-            SectionHeader("All-time", Modifier.padding(start = 16.dp))
-            InfoRow("Sweeps", "${lifetime.sweeps}", icon = Icons.Rounded.AutoAwesome)
-            InfoRow("Space freed", Formatter.formatShortFileSize(ctx, lifetime.freedBytes), icon = Icons.Rounded.Storage)
-            InfoRow("Apps force-stopped", "${lifetime.stopped}", icon = Icons.Rounded.StopCircle)
-            InfoRow("Caches cleared", "${lifetime.cleared}", icon = Icons.Rounded.CleaningServices)
-        }
-        SectionHeader("Access", Modifier.padding(start = 16.dp))
-        Box(Modifier.padding(horizontal = 16.dp)) {
-            NeverAskCard(com.katharia.app.AccessKeeper.canSelfEnable(ctx))
-        }
-        TextButton(onClick = onReplayTour, modifier = Modifier.padding(start = 12.dp, top = 8.dp)) {
-            Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Replay welcome tour")
-        }
-        TextButton(onClick = onChangelog, modifier = Modifier.padding(start = 12.dp)) {
-            Icon(Icons.Rounded.ListAlt, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Changelog · v${com.katharia.app.BuildConfig.VERSION_NAME}")
-        }
-    }
-}
-
 // ---------------------------------------------------------------- setup cards
 
 @Composable
-private fun SetupCard(
+internal fun SetupCard(
     icon: ImageVector,
     title: String,
     body: String,
@@ -843,7 +525,7 @@ private fun SetupCard(
 }
 
 @Composable
-private fun ServiceCard(ctx: Context) {
+internal fun ServiceCard(ctx: Context) {
     val restricted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     SetupCard(
         Icons.Rounded.Shield,
@@ -853,29 +535,29 @@ private fun ServiceCard(ctx: Context) {
             if (restricted) "\n\nSwitch greyed out? Tap App info → ⋮ menu → Allow restricted settings, then try again." else "",
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { ctx.open(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) { Text("Open Accessibility") }
+            Button(onClick = { ctx.openSafely(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) { Text("Open Accessibility") }
             if (restricted) OutlinedButton(onClick = {
-                ctx.open(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", ctx.packageName, null)))
+                ctx.openSafely(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", ctx.packageName, null)))
             }) { Text("App info") }
         }
     }
 }
 
 @Composable
-private fun UsageCard(ctx: Context) {
+internal fun UsageCard(ctx: Context) {
     SetupCard(
         Icons.Rounded.Storage,
         "See cache sizes",
         "Optional. Allow “Usage access” to see how much cache each app is holding and how much a sweep frees.",
     ) {
-        FilledTonalButton(onClick = { ctx.open(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }) { Text("Allow usage access") }
+        FilledTonalButton(onClick = { ctx.openSafely(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }) { Text("Allow usage access") }
     }
 }
 
 // ---------------------------------------------------------------- list
 
 @Composable
-private fun SearchField(query: String, onChange: (String) -> Unit) {
+internal fun SearchField(query: String, onChange: (String) -> Unit) {
     val colors = MaterialTheme.colorScheme
     TextField(
         value = query,
@@ -899,7 +581,15 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
 
 /** One app, drawn as part of a grouped list: big rounding at the ends, small in between. */
 @Composable
-private fun AppRow(app: InstalledApp, checked: Boolean, first: Boolean, last: Boolean, showActive: Boolean = false, onToggle: () -> Unit) {
+internal fun AppRow(
+    app: InstalledApp,
+    checked: Boolean,
+    first: Boolean,
+    last: Boolean,
+    showActive: Boolean = false,
+    maxCache: Long = 0,
+    onToggle: () -> Unit,
+) {
     val ctx = LocalContext.current
     val colors = MaterialTheme.colorScheme
     val big = 28.dp
@@ -944,6 +634,16 @@ private fun AppRow(app: InstalledApp, checked: Boolean, first: Boolean, last: Bo
                     if (sub.isNotEmpty()) Text(sub, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                 }
             }
+            val cache = app.cacheBytes ?: 0L
+            if (maxCache > 0 && cache > 0) {
+                val frac by androidx.compose.animation.core.animateFloatAsState(
+                    (cache.toFloat() / maxCache).coerceIn(0.02f, 1f), tween(600), label = "cacheBar",
+                )
+                Spacer(Modifier.height(6.dp))
+                Box(Modifier.fillMaxWidth(0.9f).height(4.dp).clip(CircleShape).background(colors.primary.copy(alpha = 0.12f))) {
+                    Box(Modifier.fillMaxWidth(frac).height(4.dp).clip(CircleShape).background(if (checked) colors.primary else colors.outline))
+                }
+            }
         }
         Checkbox(checked = checked, onCheckedChange = { onToggle() })
     }
@@ -951,7 +651,7 @@ private fun AppRow(app: InstalledApp, checked: Boolean, first: Boolean, last: Bo
 }
 
 @Composable
-private fun AppIcon(ctx: Context, app: InstalledApp) {
+internal fun AppIcon(ctx: Context, app: InstalledApp) {
     val colors = MaterialTheme.colorScheme
     val bmp by produceState<ImageBitmap?>(null, app.packageName) {
         value = withContext(Dispatchers.IO) {
@@ -972,7 +672,7 @@ private fun AppIcon(ctx: Context, app: InstalledApp) {
 
 /** Floating pill at the bottom, styled like Bataria's nav bar, holding the main action. */
 @Composable
-private fun FloatingSweepBar(
+internal fun FloatingSweepBar(
     count: Int,
     label: String?,
     cache: Long?,
@@ -1019,6 +719,6 @@ private fun FloatingSweepBar(
     }
 }
 
-private fun Context.open(i: Intent) {
+internal fun Context.openSafely(i: Intent) {
     runCatching { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
