@@ -359,11 +359,13 @@ class SweepService : AccessibilityService() {
                 if (attempt == 0) poll(800) { findClearCache() }?.let { return it }
                 return null
             }
+            val sig = sc.signature()
             val moved = scroller.node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) ||
                 scroller.node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN.id)
             if (!moved) return poll(600) { findClearCache(includeHidden = true) }
             note("scroll")
             poll(450) { findClearCache() }?.let { return it }
+            if (snap().signature() == sig) return null // reached the bottom; nothing more to find
         }
         return findClearCache(includeHidden = true)
     }
@@ -426,6 +428,9 @@ class SweepService : AccessibilityService() {
     }
 
     private inner class Screen(val items: List<Item>, val windowIds: Set<Int>, val packages: Set<String>) {
+        /** What's on screen, cheaply, to tell whether a scroll actually moved anything. */
+        fun signature() = items.filter { it.visible }.joinToString("|") { it.label }
+
         fun hasText(s: String) = items.any { it.visible && it.label.contains(s) }
 
         /** First visible element whose label is one of [labels], resolved to the thing you'd tap. */
@@ -648,15 +653,13 @@ class SweepService : AccessibilityService() {
         return out.filter { it.packageName?.toString() != packageName }
     }
 
-    private fun activeRoot(): AccessibilityNodeInfo? =
-        if (Build.VERSION.SDK_INT >= 33) getRootInActiveWindow(AccessibilityNodeInfo.FLAG_PREFETCH_DESCENDANTS_HYBRID)
-        else rootInActiveWindow
+    // Plain lookups on purpose. The bulk "prefetch" variants stop at Android's 50-node batch limit, which
+    // silently cut every screen off after 50 elements — Clear cache sits past that on Pixel's storage page.
+    private fun activeRoot(): AccessibilityNodeInfo? = rootInActiveWindow
 
-    private fun rootOf(w: AccessibilityWindowInfo): AccessibilityNodeInfo? =
-        if (Build.VERSION.SDK_INT >= 33) w.getRoot(AccessibilityNodeInfo.FLAG_PREFETCH_DESCENDANTS_HYBRID) else w.root
+    private fun rootOf(w: AccessibilityWindowInfo): AccessibilityNodeInfo? = w.root
 
-    private fun child(n: AccessibilityNodeInfo, i: Int): AccessibilityNodeInfo? =
-        if (Build.VERSION.SDK_INT >= 33) n.getChild(i, AccessibilityNodeInfo.FLAG_PREFETCH_DESCENDANTS_HYBRID) else n.getChild(i)
+    private fun child(n: AccessibilityNodeInfo, i: Int): AccessibilityNodeInfo? = n.getChild(i)
 
     private fun AccessibilityNodeInfo.label(): String =
         (text?.takeIf { it.isNotBlank() } ?: contentDescription)?.normalized() ?: ""

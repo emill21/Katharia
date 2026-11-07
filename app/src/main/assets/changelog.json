@@ -1,12 +1,21 @@
 [
   {
+    "version": "3.6",
+    "date": "2026-11-06",
+    "title": "Clear cache, actually fixed",
+    "items": [
+      "Fixed the real cause of \"cache not cleared\": Katharia only read the first 50 items on each screen, and on Pixel the Clear cache button sits past that",
+      "Every screen is now read in full, so buttons further down are found on every phone",
+      "Stops scrolling as soon as the page reaches the bottom, instead of trying eight times"
+    ]
+  },
+  {
     "version": "3.5",
     "date": "2026-11-06",
-    "title": "Android 17 cache rows",
+    "title": "Safer fallbacks",
     "items": [
-      "Android 17 removed the Clear cache button. Clearing now happens from the Cache row, and Katharia taps that row and confirms the \"Clear cache?\" prompt",
-      "Built to be careful: it only ever taps the Cache row, never User data, and backs out of any prompt that isn't about cache",
-      "The sweep log now marks which items on screen can be tapped, for faster fixes on new phones"
+      "If no Clear cache button can be found, Katharia tries the Cache row, but only ever that row, never User data, and backs out of any prompt that isn't about cache",
+      "The sweep log now marks which items on screen can be tapped"
     ]
   },
   {
