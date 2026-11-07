@@ -134,7 +134,7 @@ fun AppsScreen(st: KathariaState, padding: PaddingValues) {
             ) {
                 FilterChip(
                     selected = true,
-                    onClick = { st.setSort(SortBy.entries[(st.sort.ordinal + 1) % SortBy.entries.size]); haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
+                    onClick = { st.chooseSort(SortBy.entries[(st.sort.ordinal + 1) % SortBy.entries.size]); haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
                     label = { Text(st.sort.label) },
                     leadingIcon = { Icon(Icons.AutoMirrored.Rounded.Sort, null, Modifier.size(18.dp)) },
                     shape = CircleShape,

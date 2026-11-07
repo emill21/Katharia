@@ -130,7 +130,7 @@ fun SweepScreen(
 
         if (state !is SweepState.Running) {
             animatedItem(2) { SectionHeader("Action") }
-            animatedItem(2) { ModeGrid(st) { if (it != st.mode) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); st.setMode(it) } }
+            animatedItem(2) { ModeGrid(st) { if (it != st.mode) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); st.chooseMode(it) } }
         }
 
         if (!st.usageOn) animatedItem(3) { UsageCard(ctx) }

@@ -120,10 +120,10 @@ class KathariaState(private val ctx: Context) {
     fun toggle(pkg: String) { excluded = if (pkg in excluded) excluded - pkg else excluded + pkg; prefs.excluded = excluded }
     fun selectAll(list: List<InstalledApp>) { excluded = excluded - list.map { it.packageName }.toSet(); prefs.excluded = excluded }
     fun selectNone(list: List<InstalledApp>) { excluded = excluded + list.map { it.packageName }; prefs.excluded = excluded }
-    fun setMode(m: SweepMode) { mode = m; prefs.mode = m }
-    fun setSort(s: SortBy) { sort = s; prefs.sort = s }
+    fun chooseMode(m: SweepMode) { mode = m; prefs.mode = m }
+    fun chooseSort(s: SortBy) { sort = s; prefs.sort = s }
     fun setSystem(on: Boolean) { includeSystem = on; prefs.includeSystem = on }
-    fun setSkipTiny(on: Boolean) { skipTiny = on; prefs.skipTiny = on }
+    fun chooseSkipTiny(on: Boolean) { skipTiny = on; prefs.skipTiny = on }
 
     fun refreshAccess() {
         AccessKeeper.ensureEnabled(ctx)

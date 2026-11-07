@@ -84,7 +84,7 @@ fun SettingsScreen(
                     Icons.Rounded.Speed, "Skip tiny caches",
                     "Caches under 64 KB refill instantly. Skipping them makes sweeps faster.",
                     st.skipTiny,
-                ) { st.setSkipTiny(it) }
+                ) { st.chooseSkipTiny(it) }
                 SwitchRow(
                     Icons.Rounded.Apps, "Show system apps",
                     "Include Android's built-in apps in the list.",
