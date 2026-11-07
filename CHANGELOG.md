@@ -1,8 +1,14 @@
 # Changelog
 
-## 3.4 · Clear cache on Android 17 (2026-11-06)
+## 3.5 · Android 17 cache rows (2026-11-06)
 
-- Android 17 moved the Clear cache button below the size breakdown, off the bottom of the screen. Katharia now scrolls it into view (or scrolls the page) before tapping
+- Android 17 removed the Clear cache button. Clearing now happens from the Cache row, and Katharia taps that row and confirms the "Clear cache?" prompt
+- Built to be careful: it only ever taps the Cache row, never User data, and backs out of any prompt that isn't about cache
+- The sweep log now marks which items on screen can be tapped, for faster fixes on new phones
+
+## 3.4 · Finding Clear cache on Android 17 (2026-11-06)
+
+- On Android 17 Katharia now scrolls the storage page looking for the Clear cache button
 - Waits for the storage page itself instead of guessing, so it no longer re-taps or times out
 - Checks the Cache size before and after, and the sweep log shows it (for example "cache 173 MB → 0 B")
 - The sweep log now marks off-screen items and lists scrollable areas, for faster troubleshooting

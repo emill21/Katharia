@@ -239,7 +239,10 @@ class SweepService : AccessibilityService() {
                 }
                 note("storage page")
                 clear = revealClearCache(note)
-                if (clear == null) { note("no clear-cache button; screen: ${snap().describe()}"); return StepResult.NotFound }
+                if (clear == null) {
+                    // Android 17: no buttons on this page any more — the Cache row itself clears the cache.
+                    return clearViaCacheRow(note)
+                }
             } else if (snap().packages.any { it == MIUI }) {
                 // Xiaomi / HyperOS: Clear data → menu → Clear cache. (Here "Clear data" only opens a menu.)
                 val menu = snap().find(text.miuiClearData, allowForbidden = true)
@@ -284,6 +287,53 @@ class SweepService : AccessibilityService() {
         if (readingBefore != null) note("cache $readingBefore → ${readingAfter ?: "?"}")
         if (cleared == null) note("unverified")
         return StepResult.Done
+    }
+
+    /**
+     * Android 17 layout: the storage page is just a size breakdown (App size / User data / Cache / Total)
+     * and clearing happens by tapping a row. We only ever tap the *Cache* row — never User data, which
+     * would wipe the app — and only confirm a dialog that is clearly about cache.
+     */
+    private suspend fun clearViaCacheRow(note: (String) -> Unit): StepResult {
+        val sc = snap()
+        val row = sc.cacheRowTarget()
+        if (row == null) {
+            note("no clear-cache button or tappable cache row; screen: ${sc.describe()}")
+            return StepResult.NotFound
+        }
+        val readingBefore = sc.cacheReading()
+        if (readingBefore != null && readingBefore.startsWith("0")) { note("cache row says $readingBefore"); return StepResult.AlreadyClean }
+        val before = sc.windowIds
+        row.click()
+        note("cache row")
+
+        // Expect a "Clear cache?" dialog, a sheet with a Clear cache button, or the size simply dropping.
+        var acted = false
+        val result = poll(2500) {
+            val now = snap()
+            val reading = now.cacheReading()
+            if (readingBefore != null && reading != null && reading != readingBefore) return@poll "cleared"
+            if (!acted) {
+                val dialog = now.findSafeCacheConfirm(before)
+                if (dialog != null) { dialog.click(); acted = true; note("confirmed"); return@poll null }
+                if (now.dialogLooksDangerous(before)) return@poll "danger"
+                val button = now.find(text.clearCache) ?: now.findCacheLike()
+                if (button != null && button.enabled) { button.click(); acted = true; note("sheet button"); return@poll null }
+            }
+            null
+        }
+        if (result == "danger") {
+            // Something that isn't about cache popped up. Back out without touching it.
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            note("unexpected dialog, backed out; screen: ${snap().describe()}")
+            return StepResult.NotFound
+        }
+        val readingAfter = snap().cacheReading()
+        if (readingBefore != null) note("cache $readingBefore → ${readingAfter ?: "?"}")
+        return when {
+            result == "cleared" || acted -> StepResult.Done
+            else -> { note("cache row did nothing; screen: ${snap().describe()}"); StepResult.NotFound }
+        }
     }
 
     /**
@@ -432,12 +482,75 @@ class SweepService : AccessibilityService() {
             return null
         }
 
-        /** Short list of what's on screen, for the sweep log when something can't be found. */
+        /**
+         * What's on screen, for the sweep log: labels, "~" = off screen, "*" = tappable,
+         * "∅*Class" = a tappable element with no label (e.g. an icon button).
+         */
         fun describe(): String = items.asSequence()
-            .filter { it.label.isNotBlank() }
-            .map { (if (it.visible) "" else "~") + it.label.take(28) }.distinct().take(40)
+            .filter { it.label.isNotBlank() || it.node.isClickable }
+            .map {
+                val name = it.label.take(28).ifEmpty { "∅" + it.node.className?.toString()?.substringAfterLast('.').orEmpty() }
+                (if (it.visible) "" else "~") + name + (if (it.node.isClickable) "*" else "")
+            }.distinct().take(45)
             .joinToString(" | ") +
             " [${items.size} nodes, ${scrollers().size} scrollable, pkgs ${packages.joinToString()}]"
+
+        /**
+         * The thing to tap for the Cache row: a tappable element that holds the "Cache" label (or sits in
+         * its row, like a trash icon) and nothing from any other row — so it can never be User data.
+         */
+        fun cacheRowTarget(): Hit? {
+            val i = items.indexOfFirst { it.visible && it.label in text.cacheRow }
+            if (i < 0) return null
+            // Climb to the row: the biggest ancestor whose labels are only "Cache" and sizes.
+            var row = i
+            var p = items[i].parent
+            var d = 0
+            while (p >= 0 && d < 4) {
+                if (!onlyCacheInside(p)) break
+                row = p
+                p = items[p].parent
+                d++
+            }
+            // Prefer a tappable icon/button inside the row, else the row itself.
+            val inside = items.indices.filter { it != row && isInside(it, row) && items[it].node.isClickable && items[it].visible }
+            val pick = inside.lastOrNull() ?: row.takeIf { items[it].node.isClickable } ?: return null
+            if (!onlyCacheInside(pick)) return null
+            val n = items[pick].node
+            return Hit(n, n.isEnabled, items[pick].visible)
+        }
+
+        private fun onlyCacheInside(container: Int): Boolean {
+            val labels = items.indices.filter { it == container || isInside(it, container) }.map { items[it].label }.filter { it.isNotBlank() }
+            return labels.all { it in text.cacheRow || it.any(Char::isDigit) || it.length <= 3 } && labels.any { it in text.cacheRow }
+        }
+
+        /** A confirm button in a new dialog that is clearly about cache, never storage or data. */
+        fun findSafeCacheConfirm(before: Set<Int>): Hit? {
+            val fresh = items.filter { it.window !in before && it.visible }
+            if (fresh.isEmpty()) return null
+            val labels = fresh.map { it.label }
+            if (labels.any { matches(it, text.forbidden) || it.contains("user data") || it.contains("all data") }) return null
+            val aboutCache = labels.any { it.contains("cache") }
+            for (i in items.indices) {
+                val x = items[i]
+                if (x.window in before || !x.visible) continue
+                val ok = x.label.contains("cache") && text.clearWords.any { x.label.contains(it) } ||
+                    aboutCache && (x.id == "android:id/button1" || matches(x.label, text.cacheConfirm))
+                if (!ok || matches(x.label, text.forbidden)) continue
+                tappable(i)?.takeIf { it.enabled }?.let { return it }
+            }
+            return null
+        }
+
+        /** A new dialog that mentions clearing storage/data rather than cache. */
+        fun dialogLooksDangerous(before: Set<Int>): Boolean {
+            val fresh = items.filter { it.window !in before && it.visible && it.label.isNotBlank() }
+            if (fresh.isEmpty()) return false
+            val hard = fresh.any { matches(it.label, text.forbidden) || it.label.contains("user data") || it.label.contains("all data") }
+            val aboutCache = fresh.any { it.label.contains("cache") }
+            return hard || (!aboutCache && fresh.any { it.label.contains("storage") || it.label.contains("data") })
+        }
 
         /** A confirm button in a window that appeared after [before] (i.e. a fresh dialog). */
         fun findDialogButton(before: Set<Int>, labels: Set<String>, exclude: Hit): Hit? {

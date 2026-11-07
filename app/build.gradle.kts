@@ -14,8 +14,8 @@ android {
         applicationId = "com.katharia.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "3.4"
+        versionCode = 11
+        versionName = "3.5"
     }
 
     // One fixed key for every build, so new versions install over old ones and keep
