@@ -47,7 +47,7 @@ import com.katharia.app.InstalledApp
 import com.katharia.app.SortBy
 import com.katharia.app.SweepMode
 
-private enum class AppFilter(val label: String) { All("All"), Selected("Selected"), Running("Running"), Protected("Protected") }
+private enum class AppFilter(val label: String) { All("All"), Selected("Selected"), Running("Running"), Protected("Never stop") }
 
 @Composable
 fun AppsScreen(st: KathariaState, padding: PaddingValues) {
@@ -88,6 +88,15 @@ fun AppsScreen(st: KathariaState, padding: PaddingValues) {
                                 Text("${Formatter.formatShortFileSize(ctx, it)} of cache in your selection", style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
                             }
                         }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Shield, null, tint = colors.primary, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Tap the shield on an app to never force stop it. Its cache still gets cleared.",
+                            style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant,
+                        )
                     }
                     Spacer(Modifier.height(14.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -193,6 +202,7 @@ fun AppsScreen(st: KathariaState, padding: PaddingValues) {
                         last = i == shown.lastIndex,
                         showActive = st.mode == SweepMode.Running || filter == AppFilter.Running,
                         maxCache = maxCache,
+                        onKeepRunning = { st.toggleKeepRunning(app.packageName) },
                     ) {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         st.toggle(app.packageName)

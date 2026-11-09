@@ -72,6 +72,11 @@ class Prefs(context: Context) {
             }
         }.getOrDefault(emptyList())
 
+    /** Apps the user chose to never force-stop. Their cache is still cleared. */
+    var keepRunning: Set<String>
+        get() = sp.getStringSet("keep_running", emptySet())!!.toSet()
+        set(v) = sp.edit().putStringSet("keep_running", v).apply()
+
     var onboarded: Boolean
         get() = sp.getBoolean("onboarded", false)
         set(v) = sp.edit().putBoolean("onboarded", v).apply()

@@ -1,5 +1,16 @@
 [
   {
+    "version": "4.3",
+    "date": "2026-11-09",
+    "title": "Never force stop",
+    "items": [
+      "Pick apps that should never be force-stopped: tap the shield next to any app in the Apps tab",
+      "Those apps still get their cache cleared in Both and Cache sweeps; Stop and Running sweeps skip them",
+      "The Never stop filter shows every protected app, including your keyboard, launcher, phone and SMS apps",
+      "Works for sweeps started from the Quick Settings tile, the shortcut and the watch too"
+    ]
+  },
+  {
     "version": "4.2",
     "date": "2026-11-09",
     "title": "Katharia for your watch",

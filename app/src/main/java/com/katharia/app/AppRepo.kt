@@ -20,8 +20,12 @@ data class InstalledApp(
     val label: String,
     val system: Boolean,
     val cacheBytes: Long?,
-    /** Keyboard, launcher, phone, SMS or another accessibility app: never force-stopped. */
+    /** Never force-stopped (cache is still cleared): [autoProtected] or [keepRunning]. */
     val protected: Boolean = false,
+    /** Keyboard, launcher, phone, SMS or another accessibility app — always protected. */
+    val autoProtected: Boolean = false,
+    /** The user chose "Never force stop" for this app. */
+    val keepRunning: Boolean = false,
     /** Not force-stopped and used recently, so probably still running something. */
     val active: Boolean = false,
 )
@@ -33,6 +37,7 @@ object AppRepo {
         val withCache = hasUsageAccess(context)
         val self = context.packageName
         val guarded = protectedPackages(context)
+        val keep = Prefs(context).keepRunning
         val recent = recentlyActive(context, Prefs(context).lastStopSweepAt)
         return pm.getInstalledApplications(0)
             .asSequence()
@@ -49,7 +54,9 @@ object AppRepo {
                     label = info.loadLabel(pm).toString(),
                     system = system,
                     cacheBytes = if (withCache) cacheOf(context, info) else null,
-                    protected = info.packageName in guarded,
+                    protected = info.packageName in guarded || info.packageName in keep,
+                    autoProtected = info.packageName in guarded,
+                    keepRunning = info.packageName in keep,
                     active = info.flags and ApplicationInfo.FLAG_STOPPED == 0 && (recent == null || info.packageName in recent),
                 )
             }

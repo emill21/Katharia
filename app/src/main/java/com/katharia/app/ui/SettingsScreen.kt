@@ -90,7 +90,12 @@ fun SettingsScreen(
                     "Include Android's built-in apps in the list.",
                     st.includeSystem,
                 ) { st.setSystem(it) }
-                LinkRow(Icons.Rounded.Shield, "Always protected", "Keyboard, launcher, phone, SMS and other accessibility apps are never force-stopped.") {}
+                LinkRow(
+                    Icons.Rounded.Shield, "Never force stop",
+                    (if (st.keepRunning.isEmpty()) "No apps picked yet. " else "${st.keepRunning.size} ${if (st.keepRunning.size == 1) "app" else "apps"} picked. ") +
+                        "Tap the shield next to an app in Apps to keep it running; its cache still gets cleared. " +
+                        "Your keyboard, launcher, phone and SMS apps are always protected.",
+                ) {}
             }
         }
 

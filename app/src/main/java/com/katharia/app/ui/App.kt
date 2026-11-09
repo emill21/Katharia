@@ -100,6 +100,7 @@ class KathariaState(private val ctx: Context) {
     var selfHeal by mutableStateOf(AccessKeeper.canSelfEnable(ctx))
     var includeSystem by mutableStateOf(prefs.includeSystem); private set
     var excluded by mutableStateOf(prefs.excluded); private set
+    var keepRunning by mutableStateOf(prefs.keepRunning); private set
     var mode by mutableStateOf(prefs.mode); private set
     var sort by mutableStateOf(prefs.sort); private set
     var skipTiny by mutableStateOf(prefs.skipTiny); private set
@@ -117,6 +118,16 @@ class KathariaState(private val ctx: Context) {
     val maxCache: Long get() = all.maxOfOrNull { it.cacheBytes ?: 0L } ?: 0L
 
     fun isSelected(pkg: String) = pkg !in excluded
+
+    /** "Never force stop" on/off for one app. Updates the list straight away; sweeps then only clear its cache. */
+    fun toggleKeepRunning(pkg: String) {
+        keepRunning = if (pkg in keepRunning) keepRunning - pkg else keepRunning + pkg
+        prefs.keepRunning = keepRunning
+        apps = apps?.map {
+            if (it.packageName != pkg) it
+            else it.copy(keepRunning = pkg in keepRunning, protected = it.autoProtected || pkg in keepRunning)
+        }
+    }
     fun toggle(pkg: String) { excluded = if (pkg in excluded) excluded - pkg else excluded + pkg; prefs.excluded = excluded }
     fun selectAll(list: List<InstalledApp>) { excluded = excluded - list.map { it.packageName }.toSet(); prefs.excluded = excluded }
     fun selectNone(list: List<InstalledApp>) { excluded = excluded + list.map { it.packageName }; prefs.excluded = excluded }
@@ -251,7 +262,8 @@ fun KathariaApp(onReplayTour: () -> Unit) {
                     "Your screen will flip through Settings for each app that needs it, about a second each. " +
                         "Apps that are already stopped or clean are skipped instantly. " +
                         "Hands off until it's done; tap Stop on the banner to cancel." +
-                        if (guarded > 0 && st.mode.forceStop) "\n\n$guarded protected apps (keyboard, launcher…) won't be force-stopped." else ""
+                        if (guarded > 0 && st.mode.forceStop) "\n\n$guarded ${if (guarded == 1) "app is" else "apps are"} set to never force stop (keyboard, launcher and any you picked). " +
+                            (if (st.mode.clearCache) "Their cache still gets cleared." else "They'll be skipped.") else ""
                 )
             },
             confirmButton = {

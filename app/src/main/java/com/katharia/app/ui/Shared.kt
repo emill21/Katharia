@@ -100,6 +100,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -588,6 +589,8 @@ internal fun AppRow(
     last: Boolean,
     showActive: Boolean = false,
     maxCache: Long = 0,
+    /** Shows the "Never force stop" shield button when set. */
+    onKeepRunning: (() -> Unit)? = null,
     onToggle: () -> Unit,
 ) {
     val ctx = LocalContext.current
@@ -628,7 +631,10 @@ internal fun AppRow(
                     if (app.protected) {
                         Icon(Icons.Rounded.Shield, null, tint = colors.primary, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Protected", style = MaterialTheme.typography.labelMedium, color = colors.primary)
+                        Text(
+                            if (app.autoProtected) "Protected" else "Cache only",
+                            style = MaterialTheme.typography.labelMedium, color = colors.primary,
+                        )
                         if (sub.isNotEmpty()) Text(" · ", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                     }
                     if (sub.isNotEmpty()) Text(sub, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
@@ -645,6 +651,7 @@ internal fun AppRow(
                 }
             }
         }
+        if (onKeepRunning != null) KeepRunningButton(app, onKeepRunning)
         Checkbox(checked = checked, onCheckedChange = { onToggle() })
     }
     Spacer(Modifier.height(if (last) 0.dp else 2.dp))
@@ -721,4 +728,39 @@ internal fun FloatingSweepBar(
 
 internal fun Context.openSafely(i: Intent) {
     runCatching { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+}
+
+
+/**
+ * Shield toggle: filled = never force-stopped (cache still cleared). Apps Katharia always protects
+ * (keyboard, launcher, phone, SMS) show a locked shield that explains itself when tapped.
+ */
+@Composable
+internal fun KeepRunningButton(app: InstalledApp, onToggle: () -> Unit) {
+    val ctx = LocalContext.current
+    val colors = MaterialTheme.colorScheme
+    val on = app.protected
+    val tint by animateColorAsState(if (on) colors.primary else colors.onSurfaceVariant.copy(alpha = 0.6f), tween(200), label = "keepTint")
+    val bg by animateColorAsState(if (on) colors.primary.copy(alpha = 0.14f) else Color.Transparent, tween(200), label = "keepBg")
+    androidx.compose.material3.IconButton(
+        onClick = {
+            if (app.autoProtected) {
+                android.widget.Toast.makeText(ctx, "${app.label} is always protected: it's your keyboard, launcher, phone or SMS app", android.widget.Toast.LENGTH_SHORT).show()
+            } else {
+                onToggle()
+                android.widget.Toast.makeText(
+                    ctx,
+                    if (app.keepRunning) "${app.label} will be force-stopped again" else "${app.label}: cache only, never force-stopped",
+                    android.widget.Toast.LENGTH_SHORT,
+                ).show()
+            }
+        },
+        modifier = Modifier.clip(CircleShape).background(bg),
+    ) {
+        Icon(
+            if (on) Icons.Rounded.Shield else Icons.Outlined.Shield,
+            contentDescription = if (on) "Never force stop: on" else "Never force stop: off",
+            tint = tint,
+        )
+    }
 }

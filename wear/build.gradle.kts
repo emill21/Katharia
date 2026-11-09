@@ -25,8 +25,8 @@ android {
         applicationId = "com.katharia.app"
         minSdk = 30
         targetSdk = 35
-        versionCode = 16
-        versionName = "1.0"
+        versionCode = 17
+        versionName = "1.1"
     }
 
     sourceSets["main"].java.srcDir(layout.buildDirectory.dir("generated/phoneShared"))
