@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Katharia "Aqua phone": sweeping comet ring around a glass orb of liquid, with a watch. -->
+    <path android:pathData="M23,54a31,31 0,1 0,62 0a31,31 0,1 0,-62 0z" android:strokeColor="#FFA9F0EA" android:strokeAlpha="0.22" android:strokeWidth="3" />
+    <path android:pathData="M69.50,27.15 A31,31 0,0 1,82.86,42.67" android:strokeColor="#FFA9F0EA" android:strokeAlpha="0.19" android:strokeWidth="3.6" android:strokeLineCap="round" />
+    <path android:pathData="M82.86,42.67 A31,31 0,0 1,83.62,63.14" android:strokeColor="#FFA9F0EA" android:strokeAlpha="0.26" android:strokeWidth="3.6" android:strokeLineCap="round" />
+    <path android:pathData="M83.62,63.14 A31,31 0,0 1,71.46,79.61" android:strokeColor="#FFA9F0EA" android:strokeAlpha="0.37" android:strokeWidth="3.6" android:strokeLineCap="round" />
+    <path android:pathData="M71.46,79.61 A31,31 0,0 1,51.68,84.91" android:strokeColor="#FFA9F0EA" android:strokeAlpha="0.50" android:strokeWidth="3.6" android:strokeLineCap="round" />
+    <path android:pathData="M51.68,84.91 A31,31 0,0 1,32.91,76.72" android:strokeColor="#FFA9F0EA" android:strokeAlpha="0.65" android:strokeWidth="3.6" android:strokeLineCap="round" />
+    <path android:pathData="M32.91,76.72 A31,31 0,0 1,23.35,58.62" android:strokeColor="#FFA9F0EA" android:strokeAlpha="0.81" android:strokeWidth="3.6" android:strokeLineCap="round" />
+    <path android:pathData="M23.35,58.62 A31,31 0,0 1,27.15,38.50" android:strokeColor="#FFA9F0EA" android:strokeAlpha="1.00" android:strokeWidth="3.6" android:strokeLineCap="round" />
+    <path android:pathData="M23.75,38.50a3.4,3.4 0,1 0,6.8 0a3.4,3.4 0,1 0,-6.8 0z" android:fillColor="#FFA9F0EA" />
+    <!-- Glass -->
+    <path android:pathData="M28,54a26,26 0,1 0,52 0a26,26 0,1 0,-52 0z" android:fillColor="#FFFFFFFF" android:fillAlpha="0.08" />
+    <group>
+        <clip-path android:pathData="M28,54a26,26 0,1 0,52 0a26,26 0,1 0,-52 0z" />
+        <!-- Back wave -->
+        <path android:pathData="M16,58 C30,52 40,52 50,57 C60,62 70,62 92,55 V92 H16 Z" android:fillColor="#FFA9F0EA" android:fillAlpha="0.45" />
+        <!-- Front wave -->
+        <path android:pathData="M16,56 C32,62 42,62 54,56 C66,50 76,50 92,57 V92 H16 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:type="linear" android:startX="54" android:startY="50" android:endX="54" android:endY="82"
+                    android:startColor="#FFC9F7F3" android:endColor="#FF6FD3CB" />
+            </aapt:attr>
+        </path>
+        <!-- Bubbles -->
+        <path android:pathData="M43,70a2,2 0,1 0,4 0a2,2 0,1 0,-4 0z M58.6,74a1.4,1.4 0,1 0,2.8 0a1.4,1.4 0,1 0,-2.8 0z"
+            android:fillColor="#FF073A3D" android:fillAlpha="0.25" />
+        <!-- Shine -->
+        <path android:pathData="M28,54a26,26 0,1 0,52 0a26,26 0,1 0,-52 0z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:type="radial" android:centerX="44" android:centerY="44" android:gradientRadius="22"
+                    android:startColor="#38FFFFFF" android:endColor="#00FFFFFF" />
+            </aapt:attr>
+        </path>
+    </group>
+    <!-- Watch with a sparkling face -->
+    <path android:pathData="M49,32h10l1.2,8h-12.4z M47.8,68h12.4l-1.2,8h-10z" android:fillColor="#FF073A3D" />
+    <path android:pathData="M67,51.5h2a1.2,1.2 0 0 1 1.2,1.2v2.6a1.2,1.2 0 0 1 -1.2,1.2h-2z" android:fillColor="#FF073A3D" />
+    <path android:pathData="M40,54a14,14 0,1 0,28 0a14,14 0,1 0,-28 0z" android:fillColor="#FF073A3D" />
+    <path android:pathData="M43,54a11,11 0,1 0,22 0a11,11 0,1 0,-22 0z" android:strokeColor="#FFA9F0EA" android:strokeAlpha="0.35" android:strokeWidth="1" />
+    <path android:pathData="M54,47.5 C54.65,52 55.95,53.35 60.5,54 C55.95,54.65 54.65,56 54,60.5 C53.35,56 52.05,54.65 47.5,54 C52.05,53.35 53.35,52 54,47.5Z" android:fillColor="#FFA9F0EA" />
+</vector>

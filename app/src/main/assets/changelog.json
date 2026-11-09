@@ -1,5 +1,15 @@
 [
   {
+    "version": "4.2",
+    "date": "2026-11-09",
+    "title": "Katharia for your watch",
+    "items": [
+      "New: Katharia for Wear OS. Download Katharia-Wear.apk from the release to sweep your watch too",
+      "The sweep engine now knows its way around Wear OS Settings, scrolling round screens to reach Force stop and Clear cache",
+      "Force-stop dialogs that say Confirm or Yes instead of OK are now confirmed too"
+    ]
+  },
+  {
     "version": "4.1",
     "date": "2026-11-07",
     "title": "A new icon",

@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "Katharia"
 include(":app")
+include(":wear")

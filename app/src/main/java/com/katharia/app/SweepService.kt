@@ -42,6 +42,9 @@ class SweepService : AccessibilityService() {
     private var overlay: View? = null
     private var overlayText: TextView? = null
 
+    /** Running on a watch: Settings is a scrolling round list, so buttons are often below the fold. */
+    private val isWatch by lazy { packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_WATCH) }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         text = SettingsText(this)
@@ -74,7 +77,7 @@ class SweepService : AccessibilityService() {
     fun start(targets: List<Target>, mode: SweepMode, fromShade: Boolean = false) {
         if (job?.isActive == true || targets.isEmpty()) return
         text = SettingsText(this) // pick up a language change
-        val list = targets.filter { it.packageName != packageName && it.packageName != SettingsText.SETTINGS }
+        val list = targets.filter { it.packageName != packageName && it.packageName !in SettingsText.SETTINGS_PACKAGES }
         job = scope.launch {
             val outcomes = mutableListOf<AppOutcome>()
             var cancelled = false
@@ -203,13 +206,16 @@ class SweepService : AccessibilityService() {
         val sc = snap()
         val fresh = sc.windowIds.any { it !in oldWindows }
         if (!fresh && !sc.hasText(label.normalized())) return null
-        return sc.find(text.forceStop) ?: sc.find(text.storage) ?: sc.find(text.clearCache)
+        return sc.find(text.forceStop) ?: sc.find(text.storage) ?: sc.find(text.clearCache) ?:
+            (if (isWatch) sc.find(text.appInfoRow) ?: sc.find(text.forceStop, includeHidden = true) else null)
     }
 
     private fun notFoundIf(b: Boolean) = if (b) StepResult.NotFound else StepResult.Skipped
 
     private suspend fun tapForceStop(): StepResult {
-        val btn = poll(2000) { snap().find(text.forceStop) } ?: return StepResult.NotFound
+        val btn = poll(if (isWatch) 700 else 2000) { snap().find(text.forceStop) }
+            ?: (if (isWatch) revealOnWatch(text.forceStop) else null)
+            ?: return StepResult.NotFound
         if (!btn.enabled) return StepResult.AlreadyClean // already stopped, or a protected app
         btn.click()
 
@@ -227,6 +233,18 @@ class SweepService : AccessibilityService() {
 
     private suspend fun tapClearCache(knownCache: Long?, note: (String) -> Unit): StepResult {
         var clear = snap().find(text.clearCache) // a few skins show it right on App info
+        if (clear == null && isWatch) {
+            // Wear OS: Clear cache sits further down the app's page, or one level in under "App info".
+            clear = revealOnWatch(text.clearCache) ?: run {
+                val row = revealOnWatch(text.appInfoRow) ?: revealOnWatch(text.storage)
+                if (row == null) { note("watch: no clear cache or app info; screen: ${snap().describe()}"); return StepResult.NotFound }
+                row.click()
+                note("watch: app info")
+                poll(2200) { snap().takeIf { it.onStoragePage() || it.find(text.clearCache, includeHidden = true) != null } }
+                revealOnWatch(text.clearCache) ?: revealClearCache(note)
+            }
+            if (clear == null) { note("watch: no clear cache; screen: ${snap().describe()}"); return StepResult.NotFound }
+        }
         if (clear == null) {
             val storage = findWithScroll(text.storage, ordered = true)
                 ?: snap().findStartingWith(text.storagePrefix).also { if (it != null) note("storage~") }
@@ -373,6 +391,29 @@ class SweepService : AccessibilityService() {
             if (snap().signature() == sig) return null // reached the bottom; nothing more to find
         }
         return findClearCache(includeHidden = true)
+    }
+
+    /**
+     * Watch screens are small: scroll the round list (or ask Android to bring the item into view)
+     * until a button with one of [labels] is on screen. Never scrolls back up past the start.
+     */
+    private suspend fun revealOnWatch(labels: Set<String>): Hit? {
+        repeat(10) {
+            val sc = snap()
+            sc.find(labels)?.let { return it }
+            sc.find(labels, includeHidden = true)?.let { hidden ->
+                hidden.node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.id)
+                return poll(500) { snap().find(labels) } ?: hidden
+            }
+            val scroller = sc.scrollers().firstOrNull() ?: return null
+            val sig = sc.signature()
+            val moved = scroller.node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) ||
+                scroller.node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN.id)
+            if (!moved) return null
+            poll(400) { snap().find(labels) }?.let { return it }
+            if (snap().signature() == sig) return null
+        }
+        return null
     }
 
     /** "Clear cache", or anything close to it ("Clear app cache", "Clear cached data"…). */
@@ -734,8 +775,15 @@ class SweepService : AccessibilityService() {
         ).apply {
             gravity = Gravity.BOTTOM
             x = 0
-            y = dp(48)
-            horizontalMargin = 0.04f
+            // A round watch face clips the corners, so sit higher and narrower there.
+            y = if (isWatch) dp(10) else dp(48)
+            horizontalMargin = if (isWatch) 0.14f else 0.04f
+        }
+        if (isWatch) {
+            label.textSize = 12f
+            stopBtn.textSize = 12f
+            stopBtn.setPadding(dp(12), dp(6), dp(12), dp(6))
+            card.setPadding(dp(14), dp(8), dp(8), dp(8))
         }
         runCatching {
             wm.addView(card, lp)

@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">Katharia</string>
+    <string name="service_label">Katharia</string>
+    <string name="service_description">Katharia only acts when you tap Sweep. It opens each app you selected in your watch\'s Settings and taps \"Force stop\" and \"Clear cache\" for you, then stops. It never taps \"Clear storage\" or \"Clear data\", never reads what you type, and sends nothing anywhere.</string>
+    <string name="tile_label">Katharia sweep</string>
+</resources>

@@ -21,21 +21,30 @@ class SettingsText(context: Context) {
     /** Xiaomi's App info has no Storage row: "Clear data" opens a menu with "Clear cache" in it. */
     val miuiClearData: Set<String>
 
+    /** Wear OS: the row on an app's page that opens its details (where Force stop / Clear cache live). */
+    val appInfoRow: Set<String>
+
     /** Buttons we must never press, whatever happens. */
     val forbidden: Set<String>
 
+    /** The Settings app actually installed: phone Settings, or the watch's on Wear OS. */
+    val settingsPackage: String
+
     init {
-        val res = runCatching { context.packageManager.getResourcesForApplication(SETTINGS) }.getOrNull()
+        settingsPackage = SETTINGS_PACKAGES.firstOrNull { pkg ->
+            runCatching { context.packageManager.getApplicationInfo(pkg, 0) }.isSuccess
+        } ?: SETTINGS
+        val res = runCatching { context.packageManager.getResourcesForApplication(settingsPackage) }.getOrNull()
         fun s(vararg names: String): List<String> = names.mapNotNull { name ->
             res ?: return@mapNotNull null
-            val id = res.getIdentifier(name, "string", SETTINGS)
+            val id = res.getIdentifier(name, "string", settingsPackage)
             if (id == 0) null else runCatching { res.getString(id) }.getOrNull()
         }
 
         forceStop = norm(s("force_stop", "force_stop_btn_text") + listOf("Force stop", "Force Stop"))
         confirm = norm(
             s("dlg_ok", "okay", "force_stop", "force_stop_btn_text") +
-                listOf(context.getString(android.R.string.ok), "OK", "Ok", "Force stop", "Stop")
+                listOf(context.getString(android.R.string.ok), "OK", "Ok", "Force stop", "Stop", "Confirm", "Yes")
         )
         storage = norm(
             s("storage_settings_for_app", "storage_label", "storage_settings", "storage_use") +
@@ -51,6 +60,7 @@ class SettingsText(context: Context) {
         clearCache = norm(s("clear_cache_btn_text") + listOf("Clear cache", "Clear Cache"))
         clearWords = (clearCache.map { it.substringBefore(' ') } + listOf("clear", "delete", "empty")).filter { it.length >= 3 }.toSet()
         cacheRow = norm(s("cache_header_label", "cache_size_text") + listOf("Cache", "Cached data"))
+        appInfoRow = norm(s("application_info_label", "app_info_label") + listOf("App info", "App details", "Advanced", "More info"))
         forbidden = norm(
             s("clear_user_data_text", "clear_storage_btn_text", "uninstall_text", "disable_text") +
                 listOf("Clear storage", "Clear data", "Clear all data", "Uninstall", "Disable", "Manage storage")
@@ -59,6 +69,9 @@ class SettingsText(context: Context) {
 
     companion object {
         const val SETTINGS = "com.android.settings"
+        const val WEAR_SETTINGS = "com.google.android.apps.wearable.settings"
+        /** Never swept: sweeping Settings would pull the rug out from under the sweep itself. */
+        val SETTINGS_PACKAGES = listOf(WEAR_SETTINGS, SETTINGS)
         fun norm(list: List<String>) = list.map { it.normalized() }.filter { it.isNotEmpty() }.toSet()
     }
 }

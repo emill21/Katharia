@@ -36,7 +36,7 @@ object AppRepo {
         val recent = recentlyActive(context, Prefs(context).lastStopSweepAt)
         return pm.getInstalledApplications(0)
             .asSequence()
-            .filter { it.packageName != self && it.packageName != SettingsText.SETTINGS }
+            .filter { it.packageName != self && it.packageName !in SettingsText.SETTINGS_PACKAGES }
             .filter { it.enabled }
             .map { info ->
                 val system = info.flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0

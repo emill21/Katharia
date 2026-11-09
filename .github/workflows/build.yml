@@ -20,13 +20,17 @@ jobs:
       - name: Build release APK
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --stacktrace
+          ./gradlew :app:assembleRelease :wear:assembleRelease --stacktrace
           mv app/build/outputs/apk/release/app-release.apk Katharia.apk
+          mv wear/build/outputs/apk/release/wear-release.apk Katharia-Wear.apk
           echo "VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_ENV"
       - name: Release notes
         run: |
           jq -r '.[0] | "## \(.title)\n\n" + (.items | map("- " + .) | join("\n"))' app/src/main/assets/changelog.json > notes.md
-          printf '\n\n**Install:** download **Katharia.apk** below and open it on your phone. It installs over the previous version and keeps your settings.\n\nFull history: [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)\n' >> notes.md
+          WEAR_VERSION=$(grep -oP 'versionName = "\K[^"]+' wear/build.gradle.kts)
+          printf '\n\n### Wear OS %s\n\n' "$WEAR_VERSION" >> notes.md
+          jq -r '.[0] | (.items | map("- " + .) | join("\n"))' wear/src/main/assets/changelog.json >> notes.md
+          printf '\n\n**Install:** download **Katharia.apk** below and open it on your phone. It installs over the previous version and keeps your settings.\n\n**Watch:** install **Katharia-Wear.apk** on your watch with Wireless debugging (`adb install Katharia-Wear.apk`) or a phone app such as Wear Installer. See the README for setup.\n\nFull history: [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)\n' >> notes.md
           cat notes.md
       - name: Publish release
         if: github.ref == 'refs/heads/main'
@@ -35,9 +39,13 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: Katharia ${{ env.VERSION }} (build ${{ github.run_number }})
           body_path: notes.md
-          files: Katharia.apk
+          files: |
+            Katharia.apk
+            Katharia-Wear.apk
           make_latest: true
       - uses: actions/upload-artifact@v4
         with:
           name: Katharia-apk
-          path: Katharia.apk
+          path: |
+            Katharia.apk
+            Katharia-Wear.apk

@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.2 · Katharia for your watch (2026-11-09)
+
+- New: Katharia for Wear OS. Download Katharia-Wear.apk from the release to sweep your watch too
+- The sweep engine now knows its way around Wear OS Settings, scrolling round screens to reach Force stop and Clear cache
+- Force-stop dialogs that say Confirm or Yes instead of OK are now confirmed too
+
+### Wear OS 1.0
+
+- Sweep your watch: force stop the apps you pick and clear their cache in one tap
+- Pick apps (biggest cache first) and choose Stop + clean, Clear cache, Force stop or Close running
+- A Katharia tile with a big Sweep button and how your last sweep went
+- Swipe between Sweep, Apps and Settings, with a short setup tour
+
 ## 4.1 · A new icon (2026-11-07)
 
 - New Aqua phone icon in Bataria's Liquid Orb style: a sweeping comet ring around a glass orb, with a sparkling phone inside
